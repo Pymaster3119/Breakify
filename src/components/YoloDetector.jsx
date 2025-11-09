@@ -4,11 +4,12 @@ import React, { useEffect, useRef, useState } from 'react'
 // to the local Flask server at http://localhost:6767/predict. The server returns decoded
 // detections (class_id, score, bbox) and this component draws them on an overlay canvas.
 
-export default function YoloDetector({ videoRef, enabled, onPersonPresent }) {
+export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPhoneSeen }) {
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)
   const overlayRef = useRef(null)
   const intervalRef = useRef(null)
+  const phonePrevRef = useRef(false)
   // alarm refs
   const alarmActiveRef = useRef(false)
   const audioCtxRef = useRef(null)
@@ -66,6 +67,15 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent }) {
         })
         if (phonePresent) startAlarm()
         else stopAlarm()
+
+        // rising-edge phone detection: notify parent once per pick-up
+        try {
+          if (typeof onPhoneSeen === 'function') {
+            const prev = phonePrevRef.current || false
+            if (phonePresent && !prev) onPhoneSeen()
+            phonePrevRef.current = !!phonePresent
+          }
+        } catch (e) {}
 
         // Person detection (class 0)
         const personPresent = dets.some(d => {

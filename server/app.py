@@ -7,7 +7,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Load YOLO model (will download if not present)
-MODEL_PATH = "yolov10n.pt"
+MODEL_PATH = "yolov10s.pt"
 model = YOLO(MODEL_PATH)
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
