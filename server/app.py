@@ -29,6 +29,17 @@ def init_db():
             created_at TEXT NOT NULL
         )
         ''')
+        # sessions table: records each finished work session for a user
+        cur.execute('''
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            duration_seconds INTEGER NOT NULL,
+            phone_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        ''')
         conn.commit()
     finally:
         conn.close()
@@ -54,6 +65,38 @@ def create_user(username, password):
         cur.execute('INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)', (username, pw_hash, now))
         conn.commit()
         return True
+    finally:
+        conn.close()
+
+
+def record_session_for_user(username, duration_seconds, phone_count=0):
+    # find user id
+    user = find_user(username)
+    if not user:
+        raise ValueError('no such user')
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        now = datetime.utcnow().isoformat()
+        cur.execute('INSERT INTO sessions (user_id, duration_seconds, phone_count, created_at) VALUES (?, ?, ?, ?)', (user['id'], int(duration_seconds), int(phone_count), now))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_stats(username, limit=20):
+    user = find_user(username)
+    if not user:
+        return None
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute('SELECT SUM(duration_seconds) FROM sessions WHERE user_id = ?', (user['id'],))
+        total = cur.fetchone()[0] or 0
+        cur.execute('SELECT id, duration_seconds, phone_count, created_at FROM sessions WHERE user_id = ? ORDER BY id DESC LIMIT ?', (user['id'], limit))
+        rows = cur.fetchall()
+        recent = [{'id': r[0], 'duration_seconds': r[1], 'phone_count': r[2], 'created_at': r[3]} for r in rows]
+        return {'total_seconds': int(total), 'recent_sessions': recent}
     finally:
         conn.close()
 
@@ -176,6 +219,35 @@ def api_register():
         return jsonify({'ok': True, 'user': {'name': username}})
     except Exception as e:
         return jsonify({'error': 'failed to create user', 'detail': str(e)}), 500
+
+
+@app.route('/api/session', methods=['POST'])
+def api_session():
+    # record a finished work session for the logged-in user
+    username = session.get('user')
+    if not username:
+        return jsonify({'error': 'not authenticated'}), 401
+    data = request.get_json() or {}
+    duration = int(data.get('duration_seconds') or 0)
+    phone_count = int(data.get('phone_count') or 0)
+    if duration <= 0:
+        return jsonify({'error': 'invalid duration'}), 400
+    try:
+        record_session_for_user(username, duration, phone_count)
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': 'failed to record session', 'detail': str(e)}), 500
+
+
+@app.route('/api/stats')
+def api_stats():
+    username = session.get('user')
+    if not username:
+        return jsonify({'error': 'not authenticated'}), 401
+    stats = get_user_stats(username)
+    if stats is None:
+        return jsonify({'error': 'no such user'}), 400
+    return jsonify({'ok': True, 'stats': stats})
 
 
 @app.route('/api/login', methods=['POST'])

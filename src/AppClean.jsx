@@ -132,6 +132,18 @@ export default function App() {
         playChime()
         vibrateAndFlashFallback()
       }
+      // report completed work session to backend (for registered users)
+      try {
+        if (user && !user.isGuest) {
+          fetch('/api/session', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ duration_seconds: START_SECONDS, phone_count: phoneCount })
+          }).catch(() => {})
+        }
+      } catch (e) {}
+
       // start break timer when work session completes
       setIsOnBreak(true)
       setBreakSeconds(10) // 10 seconds break
