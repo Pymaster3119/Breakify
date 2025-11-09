@@ -91,6 +91,7 @@ export default function Leaderboard({ onClose }) {
                   <th>User</th>
                   <th>Total Focused</th>
                   <th>Sessions</th>
+                  <th>Focus Score</th>
                 </tr>
               </thead>
               <tbody>
@@ -107,6 +108,14 @@ export default function Leaderboard({ onClose }) {
                       <td className="bf-username">{r.username}{isMe ? ' • you' : ''}</td>
                       <td>{formatSecs(r.total_seconds)}</td>
                       <td>{r.session_count}</td>
+                      <td>{(() => {
+                        const total = Number(r.session_count || 0)
+                        // try a few common field names for unfocused session count
+                        const unfocused = Number(r.unfocused_sessions ?? r.unfocused ?? r.unfocused_count ?? r.unfocusedSessions ?? r.sessions_unfocused ?? 0)
+                        if (!total) return '—'
+                        const score = Math.round((1 - (unfocused / total)) * 100)
+                        return `${score}%`
+                      })()}</td>
                     </tr>
                   )
                 })}

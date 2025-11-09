@@ -360,7 +360,7 @@ export default function App() {
                 <audio ref={audioRef} src="/chime.mp3" preload="auto" />
 
                 {timerSeconds === 0 && timerStartedRef.current ? (
-                  <div className="session-summary">Phone was used <strong style={{fontSize:18}}>{phoneCount}</strong> time{phoneCount===1 ? '' : 's'} during this session.</div>
+                  <div className="session-summary"> This was a <strong style={{fontSize:18}}>{phoneCount > 0 ? 'unfocused' : 'highly focused'}</strong> session </div>
                 ) : null}
 
                 {/* allow taking an unscheduled break during an active work session */}

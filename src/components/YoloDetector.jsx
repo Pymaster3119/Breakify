@@ -82,7 +82,7 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
         try {
           if (typeof onPhoneSeen === 'function') {
             const prev = phonePrevRef.current || false
-            if (phonePresent && !prev) onPhoneSeen()
+            if ((phonePresent || humanNotPresent) && !prev) onPhoneSeen()
             phonePrevRef.current = !!phonePresent
           }
         } catch (e) {}
