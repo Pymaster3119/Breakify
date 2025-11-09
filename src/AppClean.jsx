@@ -44,6 +44,7 @@ export default function App() {
       // break finished
       setIsOnBreak(false)
       timerStartedRef.current = false // allow new work session to start on next person
+      setPhoneCount(0) // reset phone detections after each break
     }
     return () => { if (bt) clearInterval(bt) }
   }, [breakSeconds, isOnBreak])
