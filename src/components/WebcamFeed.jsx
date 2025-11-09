@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react'
 
-export default function WebcamFeed({ forwardedRef }) {
+export default function WebcamFeed({ forwardedRef, showVideo = false, autoStart = true }) {
   const internalRef = useRef(null)
   // Use the provided ref object if given, otherwise use internal ref
   const videoRef = forwardedRef ? forwardedRef : internalRef
@@ -35,15 +35,25 @@ export default function WebcamFeed({ forwardedRef }) {
     setActive(false)
   }
 
+  // auto start camera when requested
+  React.useEffect(() => {
+    if (autoStart) start()
+    return () => stop()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart])
+
+  // Keep the video element in the DOM but visually hidden when showVideo is false.
+  // This preserves the MediaStream for capture while not showing it to the user.
+  const videoStyle = showVideo
+    ? { width: '640px', height: '360px', background: '#000' }
+    : { width: 1, height: 1, opacity: 0, position: 'absolute', left: -9999 }
+
   return (
-    <div style={{textAlign:'center'}}>
-      {error && <div style={{color:'salmon'}}>{error}</div>}
-      <div style={{margin:'12px 0'}}>
-        <button onClick={start} disabled={active} style={{marginRight:8}}>Start Camera</button>
-        <button onClick={stop} disabled={!active}>Stop Camera</button>
-      </div>
+    <div style={{textAlign: 'center'}}>
+      {error && <div style={{color: 'salmon'}}>{error}</div>}
+      {/* Camera runs automatically (hidden by default) and is not controllable from the UI */}
       <div>
-        <video ref={videoRef} style={{width:'640px',height:'360px',background:'#000'}} />
+        <video ref={videoRef} style={videoStyle} />
       </div>
     </div>
   )

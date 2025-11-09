@@ -213,7 +213,8 @@ export default function YoloDetector({ videoRef, enabled }) {
     <div style={{marginTop:12}}>
       <div style={{fontSize:13,color:'#94a3b8'}}>Detector status: {status}</div>
       {error && <div style={{color:'salmon'}}>{error}</div>}
-      <canvas ref={overlayRef} style={{border:'1px solid rgba(255,255,255,0.06)',marginTop:8,maxWidth:480}} />
+  {/* overlay is kept in DOM for drawing but hidden from view to avoid showing predictions */}
+  <canvas ref={overlayRef} style={{display:'none'}} />
       <div style={{color:'#94a3b8',fontSize:12,marginTop:6}}>Server inference mode (POST /predict)</div>
     </div>
   )
