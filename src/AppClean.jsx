@@ -11,6 +11,15 @@ export default function App() {
   const START_SECONDS = 30 // development: 30 seconds
   const [phoneCount, setPhoneCount] = useState(0)
   const [user, setUser] = useState(null)
+  // try to auto-login from server session
+  useEffect(() => {
+    let mounted = true
+    fetch('/api/me', { credentials: 'include' })
+      .then(r => r.json())
+      .then(data => { if (mounted && data && data.user) setUser(data.user) })
+      .catch(() => {})
+    return () => { mounted = false }
+  }, [])
   const [isOnBreak, setIsOnBreak] = useState(false)
   const BREAK_TOTAL = 10
   const [breakSeconds, setBreakSeconds] = useState(0)
@@ -139,6 +148,8 @@ export default function App() {
   }
 
   const handleSignOut = () => {
+    // inform server and clear local state
+    fetch('/api/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
     setUser(null)
   }
 

@@ -1,11 +1,64 @@
-from flask import Flask, request, jsonify, send_from_directory, abort
+from flask import Flask, request, jsonify, send_from_directory, abort, session
 from flask_cors import CORS
+import sqlite3
+from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
 from ultralytics import YOLO
 import torch
 import os
 
 app = Flask(__name__)
-CORS(app)
+# Secret key for session cookies (use env var in production)
+app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
+# Allow cross-origin requests; allow credentials for cookie-based sessions
+CORS(app, supports_credentials=True)
+
+# --- simple sqlite user storage for hashed passwords ---
+# place users.db next to this file
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'users.db')
+
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        ''')
+        conn.commit()
+    finally:
+        conn.close()
+
+def find_user(username):
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute('SELECT id, username, password_hash, created_at FROM users WHERE username = ?', (username,))
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {'id': row[0], 'username': row[1], 'password_hash': row[2], 'created_at': row[3]}
+    finally:
+        conn.close()
+
+def create_user(username, password):
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        pw_hash = generate_password_hash(password)
+        now = datetime.utcnow().isoformat()
+        cur.execute('INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)', (username, pw_hash, now))
+        conn.commit()
+        return True
+    finally:
+        conn.close()
+
+# initialize DB at startup
+init_db()
 
 # Load YOLO model (will download if not present)
 MODEL_PATH = "yolov10s.pt"
@@ -104,6 +157,55 @@ def serve_last_image():
     if not os.path.exists(p):
         abort(404)
     return send_from_directory(CAPTURES_DIR, 'last.jpg')
+
+
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    data = request.get_json() or {}
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    if not username or not password:
+        return jsonify({'error': 'username and password required'}), 400
+    if len(username) < 3 or len(password) < 6:
+        return jsonify({'error': 'username must be >=3 and password >=6 chars'}), 400
+    if find_user(username):
+        return jsonify({'error': 'user exists'}), 400
+    try:
+        create_user(username, password)
+        session['user'] = username
+        return jsonify({'ok': True, 'user': {'name': username}})
+    except Exception as e:
+        return jsonify({'error': 'failed to create user', 'detail': str(e)}), 500
+
+
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    data = request.get_json() or {}
+    username = (data.get('username') or '').strip()
+    password = data.get('password') or ''
+    if not username or not password:
+        return jsonify({'error': 'username and password required'}), 400
+    user = find_user(username)
+    if not user:
+        return jsonify({'error': 'no such user'}), 400
+    if not check_password_hash(user['password_hash'], password):
+        return jsonify({'error': 'invalid credentials'}), 401
+    session['user'] = username
+    return jsonify({'ok': True, 'user': {'name': username}})
+
+
+@app.route('/api/me')
+def api_me():
+    username = session.get('user')
+    if not username:
+        return jsonify({'user': None})
+    return jsonify({'user': {'name': username}})
+
+
+@app.route('/api/logout', methods=['POST'])
+def api_logout():
+    session.pop('user', None)
+    return jsonify({'ok': True})
 
 
 if __name__ == "__main__":
