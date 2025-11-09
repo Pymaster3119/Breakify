@@ -16,6 +16,8 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
   const oscRef = useRef(null)
   const gainRef = useRef(null)
   const alarmPulseRef = useRef(null)
+  // prevent overlapping uploads: only one in-flight POST at a time
+  const sendingRef = useRef(false)
 
   useEffect(() => {
     if (!enabled) return
@@ -23,6 +25,8 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
     setStatus('running (server)')
 
     const sendFrame = async () => {
+      // throttle: if a request is already in-flight, skip this frame
+      if (sendingRef.current) return
       try {
         const v = videoRef?.current
         if (!v || v.readyState < 2) return
@@ -42,6 +46,7 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
         const form = new FormData()
         form.append('image', blob, 'frame.jpg')
 
+        sendingRef.current = true
         const resp = await fetch('http://localhost:6767/predict?img_size=' + imgSize, {
           method: 'POST',
           body: form
@@ -118,11 +123,13 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
           clearInterval(intervalRef.current)
           intervalRef.current = null
         }
+      } finally {
+        sendingRef.current = false
       }
     }
 
-    // Poll at ~4 FPS
-    intervalRef.current = setInterval(sendFrame, 250)
+    // Poll at ~5 FPS (one image every 200ms) but avoid overlapping requests
+    intervalRef.current = setInterval(sendFrame, 200)
 
     return () => {
       mounted = false

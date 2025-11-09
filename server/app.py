@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, send_from_directory, abort
 from flask_cors import CORS
 from ultralytics import YOLO
+import torch
 import os
 
 app = Flask(__name__)
@@ -8,7 +9,29 @@ CORS(app)
 
 # Load YOLO model (will download if not present)
 MODEL_PATH = "yolov10s.pt"
+if torch.backends.mps.is_available() and torch.backends.mps.is_built():
+    DEVICE = 'mps'
+elif torch.cuda.is_available():
+    DEVICE = 'cuda'
+else:
+    DEVICE = 'cpu'
+
+print(f"Loading model on device: {DEVICE}")
 model = YOLO(MODEL_PATH)
+
+try:
+    try:
+        model.to(DEVICE)
+    except Exception:
+        # fallback: access underlying model attribute
+        if hasattr(model, 'model'):
+            try:
+                model.model.to(DEVICE)
+            except Exception:
+                pass
+except Exception:
+    # not fatal; inference will try to run on default device
+    pass
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 CAPTURES_DIR = os.path.join(THIS_DIR, 'captures')
