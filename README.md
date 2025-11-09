@@ -1,1 +1,1 @@
-# Breakify
+# Breakify — Local Pomodoro + YOLO Demo

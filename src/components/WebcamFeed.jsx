@@ -1,7 +1,9 @@
 import React, { useRef, useState } from 'react'
 
-export default function WebcamFeed() {
-  const videoRef = useRef(null)
+export default function WebcamFeed({ forwardedRef }) {
+  const internalRef = useRef(null)
+  // Use the provided ref object if given, otherwise use internal ref
+  const videoRef = forwardedRef ? forwardedRef : internalRef
   const [error, setError] = useState(null)
   const [active, setActive] = useState(false)
 
