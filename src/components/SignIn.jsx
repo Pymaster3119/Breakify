@@ -1,27 +1,26 @@
 import React, { useState } from 'react'
 
+const API_BASE = 'http://localhost:6767'
+
 export default function SignIn({ onSignIn }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [isRegistering, setIsRegistering] = useState(false)
   const [msg, setMsg] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const submit = async e => {
     e.preventDefault()
     setMsg('')
     const u = username.trim()
-    let p = password
+    const p = password
     if (!u) return setMsg('Please enter a username')
     if (!p) return setMsg('Please enter a password')
-    p = await (async () => {
-      const enc = new TextEncoder()
-      const hashBuffer = await crypto.subtle.digest('SHA-256', enc.encode(p))
-      return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('')
-    })()
 
-    const endpoint = isRegistering ? 'http://localhost:6767/api/register' : 'http://localhost:6767/api/login'
+    const endpoint = isRegistering ? '/api/register' : '/api/login'
+    setLoading(true)
     try {
-      const res = await fetch(endpoint, {
+      const res = await fetch(API_BASE + endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -30,13 +29,16 @@ export default function SignIn({ onSignIn }) {
       const data = await res.json()
       if (!res.ok) {
         setMsg(data.error || data.detail || 'Server error')
+        setLoading(false)
         return
       }
       // success
+      setLoading(false)
       onSignIn(data.user || { name: u })
     } catch (err) {
       console.error(err)
       setMsg('Failed to contact server')
+      setLoading(false)
     }
   }
 
@@ -63,12 +65,12 @@ export default function SignIn({ onSignIn }) {
 
         <div style={{display:'flex',justifyContent:'space-between',gap:8}}>
           <div>
-            <button type="button" onClick={() => setIsRegistering(s => !s)} style={{padding:'8px 10px',borderRadius:6,border:'1px solid #234',background:'transparent',color:'#9ad'}}> {isRegistering ? 'Have an account?' : 'Create account'}</button>
+            <button type="button" onClick={() => setIsRegistering(s => !s)} style={{padding:'8px 10px',borderRadius:6,border:'1px solid #234',background:'transparent',color:'#9ad'}}>{isRegistering ? 'Have an account?' : 'Create account'}</button>
           </div>
 
           <div style={{display:'flex',gap:8}}>
             <button type="button" onClick={continueAsGuest} style={{padding:'8px 12px',borderRadius:6,border:'none',background:'#64748b',color:'#fff'}}>Continue as guest</button>
-            <button type="submit" style={{padding:'8px 12px',borderRadius:6,border:'none',background:'#06b6d4',color:'#042',fontWeight:700}}>{isRegistering ? 'Create' : 'Sign in'}</button>
+            <button type="submit" disabled={loading} style={{padding:'8px 12px',borderRadius:6,border:'none',background:'#06b6d4',color:'#042',fontWeight:700}}>{loading ? 'Please wait...' : (isRegistering ? 'Create' : 'Sign in')}</button>
           </div>
         </div>
       </form>

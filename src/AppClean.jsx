@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react'
 import WebcamFeed from './components/WebcamFeed'
 import YoloDetector from './components/YoloDetector'
 import SignIn from './components/SignIn'
+import Leaderboard from './components/Leaderboard'
 
 export default function App() {
   const videoRef = useRef(null)
@@ -14,7 +15,7 @@ export default function App() {
   // try to auto-login from server session
   useEffect(() => {
     let mounted = true
-    fetch('/api/me', { credentials: 'include' })
+    fetch('http://localhost:6767/api/me', { credentials: 'include' })
       .then(r => r.json())
       .then(data => { if (mounted && data && data.user) setUser(data.user) })
       .catch(() => {})
@@ -135,7 +136,7 @@ export default function App() {
       // report completed work session to backend (for registered users)
       try {
         if (user && !user.isGuest) {
-          fetch('/api/session', {
+          fetch('http://localhost:6767/api/session', {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
@@ -154,6 +155,14 @@ export default function App() {
   const showSummary = timerStartedRef.current && timerSeconds === 0
 
   const [showSignIn, setShowSignIn] = useState(false)
+  const [showLeaderboard, setShowLeaderboard] = useState(false)
+  // sync showLeaderboard with history (/leaderboard path)
+  useEffect(() => {
+    const updateFromLocation = () => setShowLeaderboard(window.location.pathname === '/leaderboard')
+    updateFromLocation()
+    window.addEventListener('popstate', updateFromLocation)
+    return () => window.removeEventListener('popstate', updateFromLocation)
+  }, [])
 
   const handleSignIn = userObj => {
     setUser(userObj)
@@ -162,7 +171,7 @@ export default function App() {
 
   const handleSignOut = () => {
     // inform server and clear local state
-    fetch('/api/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
+    fetch('http://localhost:6767/api/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
     setUser(null)
   }
 
@@ -176,72 +185,90 @@ export default function App() {
         </div>
 
         <div style={{position:'absolute',right:20,top:12}}>
-          {user ? (
-            <div style={{display:'flex',gap:8,alignItems:'center'}}>
-              <button onClick={handleSignOut} style={{padding:'6px 10px',borderRadius:6}}>Sign out</button>
-            </div>
-          ) : (
-            <button onClick={() => setShowSignIn(true)} style={{padding:'6px 10px',borderRadius:6}}>Sign in</button>
-          )}
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <button onClick={() => { window.history.pushState({page:'leaderboard'}, '', '/leaderboard'); setShowLeaderboard(true) }} style={{padding:'6px 10px',borderRadius:6}}>Leaderboard</button>
+            {user ? (
+              <>
+                <button onClick={handleSignOut} style={{padding:'6px 10px',borderRadius:6}}>Sign out</button>
+              </>
+            ) : (
+              <button onClick={() => setShowSignIn(true)} style={{padding:'6px 10px',borderRadius:6}}>Sign in</button>
+            )}
+          </div>
         </div>
       </header>
 
-      <main className="main">
-        <section className="preview">
-          <div>
-            <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={true} />
-            <YoloDetector videoRef={videoRef} enabled={!isOnBreak} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} />
+      {showLeaderboard ? (
+        <main className="main">
+          <div style={{padding:20}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <h2 style={{margin:0}}>Leaderboard</h2>
+              <div>
+                <button onClick={() => window.history.back()} style={{padding:'6px 10px',borderRadius:6}}>Back</button>
+              </div>
+            </div>
+            <Leaderboard onClose={() => window.history.back()} />
           </div>
-          {/* integrated central summary: when the work timer has finished, show the session summary
-              and the break countdown in the main center area instead of a separate overlay */}
-          <div style={{position:'absolute',left:0,right:0,top:0,bottom:0,display:'flex',justifyContent:'center',alignItems:'center',pointerEvents:'none'}}>
-            <div style={{textAlign:'center',width:'100%',pointerEvents:'auto'}}>
-              <div style={{marginBottom:16}}>
-                <div style={{color:'#fff',fontSize:28,fontWeight:700}}>
-                  {(isOnBreak ? 'Break time!' : 'Work time!')}
+        </main>
+      ) : (
+        <main className="main">
+          <section className="preview">
+            <div>
+              <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={true} />
+              <YoloDetector videoRef={videoRef} enabled={!isOnBreak} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} />
+            </div>
+            {/* integrated central summary: when the work timer has finished, show the session summary
+                and the break countdown in the main center area instead of a separate overlay */}
+            <div style={{position:'absolute',left:0,right:0,top:0,bottom:0,display:'flex',justifyContent:'center',alignItems:'center',pointerEvents:'none'}}>
+              <div style={{textAlign:'center',width:'100%',pointerEvents:'auto'}}>
+                <div style={{marginBottom:16}}>
+                  <div style={{color:'#fff',fontSize:28,fontWeight:700}}>
+                    {(isOnBreak ? 'Break time!' : 'Work time!')}
+                  </div>
                 </div>
-              </div>
-              <div style={{background:'rgba(0,0,0,0)',color:'#fff',padding:'12px 24px',borderRadius:8,fontSize:'48vh',fontWeight:700,fontFamily:'monospace'}}>
-                {timerSeconds === 0 && timerStartedRef.current ? formatTime(breakSeconds) : (isOnBreak ? formatTime(breakSeconds) : formatTime(timerSeconds))}
-              </div>
-
-              {/* hidden audio element: place a file at public/chime.mp3 (served as /chime.mp3) */}
-              <audio ref={audioRef} src="/chime.mp3" preload="auto" />
-
-              {/* session summary integrated below the timer when the session has finished */}
-              {timerSeconds === 0 && timerStartedRef.current ? (
-                <div style={{marginTop:18,color:'#fff'}}>
-                  <div style={{fontSize:20}}>Phone was used <strong style={{fontSize:24}}>{phoneCount}</strong> time{phoneCount===1 ? '' : 's'} during this session.</div>
+                <div style={{background:'rgba(0,0,0,0)',color:'#fff',padding:'12px 24px',borderRadius:8,fontSize:'48vh',fontWeight:700,fontFamily:'monospace'}}>
+                  {timerSeconds === 0 && timerStartedRef.current ? formatTime(breakSeconds) : (isOnBreak ? formatTime(breakSeconds) : formatTime(timerSeconds))}
                 </div>
-              ) : null}
 
-              {/* flash indicator (visible when chime fallback fires) */}
-              {flash && (
-                <div style={{position:'absolute',left:0,right:0,top:0,bottom:0,background:'rgba(255,255,255,0.08)',pointerEvents:'none'}} />
-              )}
+                {/* hidden audio element: place a file at public/chime.mp3 (served as /chime.mp3) */}
+                <audio ref={audioRef} src="/chime.mp3" preload="auto" />
 
-              {/* progress bar below clock */}
-              <div style={{display:'flex',justifyContent:'center',marginTop:24}}>
-                <div style={{width:'40vw',maxWidth:800,minWidth:200,height:12,background:'rgba(255,255,255,0.12)',borderRadius:8,overflow:'hidden'}}>
-                  <div
-                    style={{
-                      height:'100%',
-                      width: `${isOnBreak ? Math.max(0, Math.min(100, ((BREAK_TOTAL - (breakSeconds > 0 ? breakSeconds : BREAK_TOTAL)) / BREAK_TOTAL) * 100)).toFixed(2) + '%' : Math.max(0, Math.min(100, ((START_SECONDS - (timerSeconds > 0 ? timerSeconds : START_SECONDS)) / START_SECONDS) * 100)).toFixed(2) + '%'}`,
-                      background: isOnBreak ? 'linear-gradient(90deg,#f97316,#f43f5e)' : 'linear-gradient(90deg,#4ade80,#06b6d4)',
-                      transition: 'width 0.5s linear'
-                    }}
-                  />
+                {/* session summary integrated below the timer when the session has finished */}
+                {timerSeconds === 0 && timerStartedRef.current ? (
+                  <div style={{marginTop:18,color:'#fff'}}>
+                    <div style={{fontSize:20}}>Phone was used <strong style={{fontSize:24}}>{phoneCount}</strong> time{phoneCount===1 ? '' : 's'} during this session.</div>
+                  </div>
+                ) : null}
+
+                {/* flash indicator (visible when chime fallback fires) */}
+                {flash && (
+                  <div style={{position:'absolute',left:0,right:0,top:0,bottom:0,background:'rgba(255,255,255,0.08)',pointerEvents:'none'}} />
+                )}
+
+                {/* progress bar below clock */}
+                <div style={{display:'flex',justifyContent:'center',marginTop:24}}>
+                  <div style={{width:'40vw',maxWidth:800,minWidth:200,height:12,background:'rgba(255,255,255,0.12)',borderRadius:8,overflow:'hidden'}}>
+                    <div
+                      style={{
+                        height:'100%',
+                        width: `${isOnBreak ? Math.max(0, Math.min(100, ((BREAK_TOTAL - (breakSeconds > 0 ? breakSeconds : BREAK_TOTAL)) / BREAK_TOTAL) * 100)).toFixed(2) + '%' : Math.max(0, Math.min(100, ((START_SECONDS - (timerSeconds > 0 ? timerSeconds : START_SECONDS)) / START_SECONDS) * 100)).toFixed(2) + '%'}`,
+                        background: isOnBreak ? 'linear-gradient(90deg,#f97316,#f43f5e)' : 'linear-gradient(90deg,#4ade80,#06b6d4)',
+                        transition: 'width 0.5s linear'
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        </section>
-      </main>
+          </section>
+        </main>
+      )}
         {showSignIn && (
           <div style={{position:'fixed',left:0,top:0,right:0,bottom:0,zIndex:9999}}>
             <SignIn onSignIn={handleSignIn} />
           </div>
         )}
+        {/* route-like rendering: show leaderboard as its own page when pathname === /leaderboard */}
       </div>
   )
 }

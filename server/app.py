@@ -250,6 +250,27 @@ def api_stats():
     return jsonify({'ok': True, 'stats': stats})
 
 
+@app.route('/api/leaderboard')
+def api_leaderboard():
+    # Public endpoint: return users ordered by total worked seconds (desc)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute('''
+        SELECT u.username, IFNULL(SUM(s.duration_seconds), 0) as total_seconds, COUNT(s.id) as session_count
+        FROM users u
+        LEFT JOIN sessions s ON s.user_id = u.id
+        GROUP BY u.id
+        ORDER BY total_seconds DESC
+        LIMIT 100
+        ''')
+        rows = cur.fetchall()
+        result = [{'username': r[0], 'total_seconds': int(r[1]), 'session_count': int(r[2])} for r in rows]
+        return jsonify({'ok': True, 'leaderboard': result})
+    finally:
+        conn.close()
+
+
 @app.route('/api/login', methods=['POST'])
 def api_login():
     data = request.get_json() or {}
