@@ -50,7 +50,6 @@ export default function WebcamFeed({ forwardedRef, showVideo = false, autoStart 
 
   return (
     <div style={{textAlign: 'center'}}>
-      {error && <div style={{color: 'salmon'}}>{error}</div>}
       {/* Camera runs automatically (hidden by default) and is not controllable from the UI */}
       <div>
         <video ref={videoRef} style={videoStyle} />

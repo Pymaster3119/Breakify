@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from 'react'
 // to the local Flask server at http://localhost:6767/predict. The server returns decoded
 // detections (class_id, score, bbox) and this component draws them on an overlay canvas.
 
-export default function YoloDetector({ videoRef, enabled }) {
+export default function YoloDetector({ videoRef, enabled, onPersonPresent }) {
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)
   const overlayRef = useRef(null)
@@ -55,7 +55,28 @@ export default function YoloDetector({ videoRef, enabled }) {
           throw new Error(j.detail || j.error)
         }
 
-        // Draw detections if present
+        // process detections
+        const dets = (j && j.detections) ? j.detections : []
+
+        // If any detection is class 67 or 68 (phone classes), trigger alarm
+        const phonePresent = dets.some(d => {
+          const id = Number(d.class_id)
+          const score = Number(d.score || 0)
+          return (id === 67 || id === 68) && score > 0.25
+        })
+        if (phonePresent) startAlarm()
+        else stopAlarm()
+
+        // Person detection (class 0)
+        const personPresent = dets.some(d => {
+          const id = Number(d.class_id)
+          const score = Number(d.score || 0)
+          return id === 0 && score > 0.35
+        })
+        // notify parent about person presence (if callback provided)
+        try { if (typeof onPersonPresent === 'function') onPersonPresent(!!personPresent) } catch (e) {}
+
+        // Draw detections if overlay canvas exists (kept hidden in UI but available for debug)
         if (overlayRef.current) {
           const ctx2 = overlayRef.current.getContext('2d')
           overlayRef.current.width = v.videoWidth || imgSize
@@ -63,7 +84,6 @@ export default function YoloDetector({ videoRef, enabled }) {
           ctx2.clearRect(0, 0, overlayRef.current.width, overlayRef.current.height)
           const scaleX = overlayRef.current.width / imgSize
           const scaleY = overlayRef.current.height / imgSize
-          const dets = j.detections || []
           ctx2.lineWidth = 2
           ctx2.font = '16px sans-serif'
           dets.forEach(d => {
@@ -78,14 +98,6 @@ export default function YoloDetector({ videoRef, enabled }) {
             const label = `${d.class_id} ${(d.score * 100).toFixed(1)}%`
             ctx2.fillText(label, sx1 + 4, Math.max(16, sy1 + 16))
           })
-          // If any detection is class 67 or 68 (phone classes), trigger alarm
-          const phonePresent = dets.some(d => {
-            const id = Number(d.class_id)
-            const score = Number(d.score || 0)
-            return (id === 67 || id === 68) && score > 0.25
-          })
-          if (phonePresent) startAlarm()
-          else stopAlarm()
         }
       } catch (err) {
         console.error('server detect error', err)
@@ -211,11 +223,8 @@ export default function YoloDetector({ videoRef, enabled }) {
 
   return (
     <div style={{marginTop:12}}>
-      <div style={{fontSize:13,color:'#94a3b8'}}>Detector status: {status}</div>
-      {error && <div style={{color:'salmon'}}>{error}</div>}
-  {/* overlay is kept in DOM for drawing but hidden from view to avoid showing predictions */}
-  <canvas ref={overlayRef} style={{display:'none'}} />
-      <div style={{color:'#94a3b8',fontSize:12,marginTop:6}}>Server inference mode (POST /predict)</div>
+      {/* overlay is kept in DOM for drawing but hidden from view to avoid showing predictions */}
+      <canvas ref={overlayRef} style={{display:'none'}} />
     </div>
   )
 }

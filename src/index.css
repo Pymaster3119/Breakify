@@ -12,7 +12,7 @@ body{font-family:Inter, Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif
 .subtitle{margin:4px 0 16px;color:var(--muted)}
 .controls{margin-bottom:12px}
 button{background:var(--accent);border: none;color:#022; padding:10px 14px;border-radius:8px;cursor:pointer}
-.preview{background:var(--card);padding:16px;border-radius:10px;min-height:320px;display:flex;align-items:center;justify-content:center}
+.preview{padding:16px;border-radius:10px;min-height:320px;display:flex;align-items:center;justify-content:center}
 .placeholder{color:var(--muted)}
 .webcam-video{max-width:100%;height:auto;border-radius:6px;box-shadow:0 6px 20px rgba(0,0,0,0.6)}
 .camera-error{color:#fca5a5}
