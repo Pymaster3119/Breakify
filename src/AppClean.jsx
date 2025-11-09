@@ -174,27 +174,26 @@ export default function App() {
     fetch('http://localhost:6767/api/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
     setUser(null)
   }
+  const progressPct = isOnBreak
+    ? Math.max(0, Math.min(100, ((BREAK_TOTAL - (breakSeconds > 0 ? breakSeconds : BREAK_TOTAL)) / BREAK_TOTAL) * 100))
+    : Math.max(0, Math.min(100, ((START_SECONDS - (timerSeconds > 0 ? timerSeconds : START_SECONDS)) / START_SECONDS) * 100))
+  const progressWidth = `${progressPct.toFixed(2)}%`
 
   return (
     <div className="app">
-      <header className="header" style={{position:'relative',height:56}}>
-        <div style={{position:'absolute',left:20,top:12}}>
-          <div style={{background:'rgba(255,255,255,0.03)',padding:8,borderRadius:8}}>
-            <small>Signed in as: {user?.name || (user?.isGuest ? 'Guest' : 'Not signed in')}</small>
-          </div>
+      <header className="header">
+        <div className="header-left">
+          <div className="logo">Breakify</div>
+          <div className="signed-in">Signed in as: {user?.name || (user?.isGuest ? 'Guest' : 'Not signed in')}</div>
         </div>
 
-        <div style={{position:'absolute',right:20,top:12}}>
-          <div style={{display:'flex',gap:8,alignItems:'center'}}>
-            <button onClick={() => { window.history.pushState({page:'leaderboard'}, '', '/leaderboard'); setShowLeaderboard(true) }} style={{padding:'6px 10px',borderRadius:6}}>Leaderboard</button>
-            {user ? (
-              <>
-                <button onClick={handleSignOut} style={{padding:'6px 10px',borderRadius:6}}>Sign out</button>
-              </>
-            ) : (
-              <button onClick={() => setShowSignIn(true)} style={{padding:'6px 10px',borderRadius:6}}>Sign in</button>
-            )}
-          </div>
+        <div className="header-right">
+          <button className="btn ghost" onClick={() => { window.history.pushState({page:'leaderboard'}, '', '/leaderboard'); setShowLeaderboard(true) }}>Leaderboard</button>
+          {user ? (
+            <button className="btn ghost" onClick={handleSignOut}>Sign out</button>
+          ) : (
+            <button className="btn primary" onClick={() => setShowSignIn(true)}>Sign in</button>
+          )}
         </div>
       </header>
 
@@ -204,7 +203,7 @@ export default function App() {
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
               <h2 style={{margin:0}}>Leaderboard</h2>
               <div>
-                <button onClick={() => window.history.back()} style={{padding:'6px 10px',borderRadius:6}}>Back</button>
+                <button className="btn secondary" onClick={() => window.history.back()}>Back</button>
               </div>
             </div>
             <Leaderboard onClose={() => window.history.back()} />
@@ -217,45 +216,25 @@ export default function App() {
               <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={true} />
               <YoloDetector videoRef={videoRef} enabled={!isOnBreak} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} />
             </div>
-            {/* integrated central summary: when the work timer has finished, show the session summary
-                and the break countdown in the main center area instead of a separate overlay */}
-            <div style={{position:'absolute',left:0,right:0,top:0,bottom:0,display:'flex',justifyContent:'center',alignItems:'center',pointerEvents:'none'}}>
-              <div style={{textAlign:'center',width:'100%',pointerEvents:'auto'}}>
-                <div style={{marginBottom:16}}>
-                  <div style={{color:'#fff',fontSize:28,fontWeight:700}}>
-                    {(isOnBreak ? 'Break time!' : 'Work time!')}
-                  </div>
-                </div>
-                <div style={{background:'rgba(0,0,0,0)',color:'#fff',padding:'12px 24px',borderRadius:8,fontSize:'48vh',fontWeight:700,fontFamily:'monospace'}}>
-                  {timerSeconds === 0 && timerStartedRef.current ? formatTime(breakSeconds) : (isOnBreak ? formatTime(breakSeconds) : formatTime(timerSeconds))}
-                </div>
 
-                {/* hidden audio element: place a file at public/chime.mp3 (served as /chime.mp3) */}
+            <div className="timer-overlay">
+              <div className="timer-card">
+                <div className="timer-title">{(isOnBreak ? 'Break time!' : 'Work time!')}</div>
+                <div className="timer-clock">{timerSeconds === 0 && timerStartedRef.current ? formatTime(breakSeconds) : (isOnBreak ? formatTime(breakSeconds) : formatTime(timerSeconds))}</div>
+
                 <audio ref={audioRef} src="/chime.mp3" preload="auto" />
 
-                {/* session summary integrated below the timer when the session has finished */}
                 {timerSeconds === 0 && timerStartedRef.current ? (
-                  <div style={{marginTop:18,color:'#fff'}}>
-                    <div style={{fontSize:20}}>Phone was used <strong style={{fontSize:24}}>{phoneCount}</strong> time{phoneCount===1 ? '' : 's'} during this session.</div>
-                  </div>
+                  <div className="session-summary">Phone was used <strong style={{fontSize:18}}>{phoneCount}</strong> time{phoneCount===1 ? '' : 's'} during this session.</div>
                 ) : null}
 
-                {/* flash indicator (visible when chime fallback fires) */}
                 {flash && (
                   <div style={{position:'absolute',left:0,right:0,top:0,bottom:0,background:'rgba(255,255,255,0.08)',pointerEvents:'none'}} />
                 )}
 
-                {/* progress bar below clock */}
-                <div style={{display:'flex',justifyContent:'center',marginTop:24}}>
-                  <div style={{width:'40vw',maxWidth:800,minWidth:200,height:12,background:'rgba(255,255,255,0.12)',borderRadius:8,overflow:'hidden'}}>
-                    <div
-                      style={{
-                        height:'100%',
-                        width: `${isOnBreak ? Math.max(0, Math.min(100, ((BREAK_TOTAL - (breakSeconds > 0 ? breakSeconds : BREAK_TOTAL)) / BREAK_TOTAL) * 100)).toFixed(2) + '%' : Math.max(0, Math.min(100, ((START_SECONDS - (timerSeconds > 0 ? timerSeconds : START_SECONDS)) / START_SECONDS) * 100)).toFixed(2) + '%'}`,
-                        background: isOnBreak ? 'linear-gradient(90deg,#f97316,#f43f5e)' : 'linear-gradient(90deg,#4ade80,#06b6d4)',
-                        transition: 'width 0.5s linear'
-                      }}
-                    />
+                <div className="progress-wrap">
+                  <div className="progress">
+                    <div className="bar" style={{width: progressWidth, background: isOnBreak ? 'linear-gradient(90deg,#f97316,#f43f5e)' : undefined}} />
                   </div>
                 </div>
               </div>
@@ -263,12 +242,12 @@ export default function App() {
           </section>
         </main>
       )}
-        {showSignIn && (
-          <div style={{position:'fixed',left:0,top:0,right:0,bottom:0,zIndex:9999}}>
-            <SignIn onSignIn={handleSignIn} />
-          </div>
-        )}
-        {/* route-like rendering: show leaderboard as its own page when pathname === /leaderboard */}
-      </div>
+
+      {showSignIn && (
+        <div className="bf-modal">
+          <SignIn onSignIn={handleSignIn} />
+        </div>
+      )}
+    </div>
   )
 }
