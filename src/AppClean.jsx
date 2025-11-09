@@ -53,17 +53,27 @@ export default function App() {
   const BREAK_TOTAL = breakMinutes * 60
   const [breakSeconds, setBreakSeconds] = useState(0)
   const [showSettings, setShowSettings] = useState(false)
+  // session notes during break
+  const [achievement, setAchievement] = useState('')
+  const [nextGoals, setNextGoals] = useState('')
+  const [notesSaved, setNotesSaved] = useState(false)
+  const [lastGoals, setLastGoals] = useState('')
+  // tracking used break seconds (unscheduled breaks taken during work)
+  const usedBreakSecondsRef = useRef(0)
+  // store the break budget value when a break starts so we can compute elapsed if user ends early
+  const breakBudgetAtStartRef = useRef(0)
 
   // countdown effect
   useEffect(() => {
     let t = null
-    if (timerSeconds > 0) {
+    // pause work timer while on break
+    if (timerSeconds > 0 && !isOnBreak) {
       t = setInterval(() => {
         setTimerSeconds(s => Math.max(0, s - 1))
       }, 1000)
     }
     return () => { if (t) clearInterval(t) }
-  }, [timerSeconds])
+  }, [timerSeconds, isOnBreak])
 
   // break countdown
   useEffect(() => {
@@ -72,9 +82,24 @@ export default function App() {
       bt = setInterval(() => setBreakSeconds(s => Math.max(0, s - 1)), 1000)
     } else if (breakSeconds === 0 && isOnBreak) {
       // break finished
-      setIsOnBreak(false)
-      timerStartedRef.current = false // allow new work session to start on next person
-      setPhoneCount(0) // reset phone detections after each break
+      // If timerSeconds === 0 and timerStartedRef.current is true, this was the scheduled break after a completed work session.
+      if (timerSeconds === 0 && timerStartedRef.current) {
+        // scheduled break finished
+        setIsOnBreak(false)
+        timerStartedRef.current = false // allow new work session to start on next person
+        setPhoneCount(0) // reset phone detections after each break
+        // reset used break seconds for next session
+        usedBreakSecondsRef.current = 0
+      } else {
+        // unscheduled break ended because user consumed remaining break budget or ended early via UI
+        // compute elapsed break seconds from this break and accumulate
+        try {
+          const startBudget = breakBudgetAtStartRef.current || 0
+          const elapsed = startBudget - 0 // since breakSeconds === 0
+          usedBreakSecondsRef.current = (usedBreakSecondsRef.current || 0) + (elapsed > 0 ? elapsed : 0)
+        } catch (e) {}
+        setIsOnBreak(false)
+      }
     }
     return () => { if (bt) clearInterval(bt) }
   }, [breakSeconds, isOnBreak])
@@ -82,6 +107,30 @@ export default function App() {
   // handle phone seen events from detector
   const handlePhoneSeen = () => {
     setPhoneCount(c => c + 1)
+  }
+
+  // Start an unscheduled break during an active work session. This consumes from the session's break budget.
+  const startUnscheduledBreak = () => {
+    if (isOnBreak) return
+    if (!timerStartedRef.current || timerSeconds <= 0) return
+    const remainingBudget = Math.max(0, BREAK_TOTAL - (usedBreakSecondsRef.current || 0))
+    if (remainingBudget <= 0) return // no break time left
+    breakBudgetAtStartRef.current = remainingBudget
+    setBreakSeconds(remainingBudget)
+    setIsOnBreak(true)
+  }
+
+  // End an unscheduled break early (before the scheduled session end). Accumulate used break seconds.
+  const endUnscheduledBreak = () => {
+    if (!isOnBreak) return
+    // only treat as unscheduled if work timer still has time remaining
+    if (timerSeconds > 0) {
+      const startBudget = breakBudgetAtStartRef.current || 0
+      const elapsed = Math.max(0, startBudget - (breakSeconds || 0))
+      usedBreakSecondsRef.current = (usedBreakSecondsRef.current || 0) + elapsed
+      // stop break and resume work timer
+      setIsOnBreak(false)
+    }
   }
 
   const formatTime = secs => {
@@ -175,8 +224,28 @@ export default function App() {
       } catch (e) {}
 
       // start break timer when work session completes
-      setIsOnBreak(true)
-      setBreakSeconds(BREAK_TOTAL)
+  setIsOnBreak(true)
+  // scheduled break should be reduced by any unscheduled break time already taken
+  const scheduledRemaining = Math.max(0, BREAK_TOTAL - (usedBreakSecondsRef.current || 0))
+  setBreakSeconds(scheduledRemaining)
+  breakBudgetAtStartRef.current = scheduledRemaining
+      // prepare notes for new break: clear achievement, load last session's goals into separate box
+      setAchievement('')
+      try {
+        const raw = localStorage.getItem('bf_last_session_notes')
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          setLastGoals(parsed?.next_goals || '')
+        } else {
+          setLastGoals('')
+        }
+      } catch (e) {
+        setLastGoals('')
+      }
+      // keep the current Goals textarea empty for the new break
+      setNextGoals('')
+      // show the inputs again for the new break
+      setNotesSaved(false)
     }
     prevTimerRef.current = timerSeconds
   }, [timerSeconds])
@@ -293,6 +362,78 @@ export default function App() {
                 {timerSeconds === 0 && timerStartedRef.current ? (
                   <div className="session-summary">Phone was used <strong style={{fontSize:18}}>{phoneCount}</strong> time{phoneCount===1 ? '' : 's'} during this session.</div>
                 ) : null}
+
+                {/* allow taking an unscheduled break during an active work session */}
+                {!isOnBreak && timerStartedRef.current && timerSeconds > 0 ? (
+                  <div style={{marginTop:8}}>
+                    <button className="btn secondary" onClick={startUnscheduledBreak}>Take break (use break time)</button>
+                  </div>
+                ) : null}
+
+                {/* allow ending an unscheduled break early and resume work */}
+                {isOnBreak && timerSeconds > 0 ? (
+                  <div style={{marginTop:8,display:'flex',justifyContent:'flex-end'}}>
+                    <button className="btn ghost" onClick={endUnscheduledBreak}>End break</button>
+                  </div>
+                ) : null}
+
+                {/* session notes shown during break */}
+                {isOnBreak && (
+                  <div style={{marginTop:12}}>
+                    {!notesSaved ? (
+                      <>
+                        {lastGoals ? (
+                          <div style={{marginBottom:8}}>
+                            <label style={{fontSize:13,display:'block'}}>Last session, you aimed to complete these goals:</label>
+                            <label style={{fontSize:15,display:'block'}}><strong>{lastGoals}</strong></label>
+                          </div>
+                        ) : null}
+                        <div style={{marginBottom:8}}>
+                          <label style={{fontSize:13,display:'block'}}>What did you achieve during this session?</label>
+                          <textarea value={achievement} onChange={e => setAchievement(e.target.value)} rows={3} style={{width:'100%',marginTop:6,padding:8,borderRadius:6,border:'1px solid rgba(0,0,0,0.12)'}} />
+                        </div>
+
+                        <div style={{marginBottom:8}}>
+                          <label style={{fontSize:13,display:'block'}}>Goals for the next session</label>
+                          <textarea value={nextGoals} onChange={e => setNextGoals(e.target.value)} rows={2} style={{width:'100%',marginTop:6,padding:8,borderRadius:6,border:'1px solid rgba(0,0,0,0.12)'}} />
+                        </div>
+
+                        <div style={{display:'flex',justifyContent:'flex-end'}}>
+                          <button
+                            className="btn primary"
+                            onClick={async () => {
+                              const payload = { achievement, next_goals: nextGoals }
+                              try {
+                                // persist locally
+                                try { localStorage.setItem('bf_last_session_notes', JSON.stringify(payload)) } catch (e) {}
+                                // send to server for authenticated users
+                                if (user && !user.isGuest) {
+                                  await fetch('http://localhost:6767/api/session/notes', {
+                                    method: 'POST',
+                                    credentials: 'include',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(payload)
+                                  })
+                                }
+                              } catch (e) {
+                                console.warn('failed saving session notes', e)
+                              }
+                              // hide inputs after save
+                              setNotesSaved(true)
+                            }}
+                          >Save</button>
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                        <div style={{color:'var(--muted)'}}>Session notes saved.</div>
+                        <div>
+                          <button className="btn ghost" onClick={() => setNotesSaved(false)}>Edit</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {flash && (
                   <div style={{position:'absolute',left:0,right:0,top:0,bottom:0,background:'rgba(255,255,255,0.08)',pointerEvents:'none'}} />
