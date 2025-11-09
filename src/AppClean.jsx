@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import WebcamFeed from './components/WebcamFeed'
 import YoloDetector from './components/YoloDetector'
+import SignIn from './components/SignIn'
 
 export default function App() {
   const videoRef = useRef(null)
@@ -9,6 +10,7 @@ export default function App() {
   const timerStartedRef = useRef(false)
   const START_SECONDS = 30 // development: 30 seconds
   const [phoneCount, setPhoneCount] = useState(0)
+  const [user, setUser] = useState(null)
   const [isOnBreak, setIsOnBreak] = useState(false)
   const BREAK_TOTAL = 10
   const [breakSeconds, setBreakSeconds] = useState(0)
@@ -129,9 +131,35 @@ export default function App() {
 
   const showSummary = timerStartedRef.current && timerSeconds === 0
 
+  const [showSignIn, setShowSignIn] = useState(false)
+
+  const handleSignIn = userObj => {
+    setUser(userObj)
+    setShowSignIn(false)
+  }
+
+  const handleSignOut = () => {
+    setUser(null)
+  }
+
   return (
     <div className="app">
-      <header className="header">
+      <header className="header" style={{position:'relative',height:56}}>
+        <div style={{position:'absolute',left:20,top:12}}>
+          <div style={{background:'rgba(255,255,255,0.03)',padding:8,borderRadius:8}}>
+            <small>Signed in as: {user?.name || (user?.isGuest ? 'Guest' : 'Not signed in')}</small>
+          </div>
+        </div>
+
+        <div style={{position:'absolute',right:20,top:12}}>
+          {user ? (
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <button onClick={handleSignOut} style={{padding:'6px 10px',borderRadius:6}}>Sign out</button>
+            </div>
+          ) : (
+            <button onClick={() => setShowSignIn(true)} style={{padding:'6px 10px',borderRadius:6}}>Sign in</button>
+          )}
+        </div>
       </header>
 
       <main className="main">
@@ -185,6 +213,11 @@ export default function App() {
           </div>
         </section>
       </main>
-    </div>
+        {showSignIn && (
+          <div style={{position:'fixed',left:0,top:0,right:0,bottom:0,zIndex:9999}}>
+            <SignIn onSignIn={handleSignIn} />
+          </div>
+        )}
+      </div>
   )
 }
