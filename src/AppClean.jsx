@@ -3,13 +3,24 @@ import WebcamFeed from './components/WebcamFeed'
 import YoloDetector from './components/YoloDetector'
 import SignIn from './components/SignIn'
 import Leaderboard from './components/Leaderboard'
+import Settings from './components/Settings'
 
 export default function App() {
   const videoRef = useRef(null)
-  // Timer state (seconds). Start at 0 (not counting). When a person is seen we reset to 30 minutes.
+  // Timer state (seconds). Start at 0 (not counting). When a person is seen we reset to configured work length.
   const [timerSeconds, setTimerSeconds] = useState(0)
   const timerStartedRef = useRef(false)
-  const START_SECONDS = 30 // development: 30 seconds
+  // persisted settings (minutes)
+  const [workMinutes, setWorkMinutes] = useState(() => {
+    const v = parseInt(localStorage.getItem('bf_work_minutes'), 10)
+    return Number.isFinite(v) && v > 0 ? v : 30
+  })
+  const [breakMinutes, setBreakMinutes] = useState(() => {
+    const v = parseInt(localStorage.getItem('bf_break_minutes'), 10)
+    return Number.isFinite(v) && v > 0 ? v : 10
+  })
+
+  const START_SECONDS = workMinutes * 60
   const [phoneCount, setPhoneCount] = useState(0)
   const [user, setUser] = useState(null)
   // try to auto-login from server session
@@ -22,8 +33,9 @@ export default function App() {
     return () => { mounted = false }
   }, [])
   const [isOnBreak, setIsOnBreak] = useState(false)
-  const BREAK_TOTAL = 10
+  const BREAK_TOTAL = breakMinutes * 60
   const [breakSeconds, setBreakSeconds] = useState(0)
+  const [showSettings, setShowSettings] = useState(false)
 
   // countdown effect
   useEffect(() => {
@@ -147,7 +159,7 @@ export default function App() {
 
       // start break timer when work session completes
       setIsOnBreak(true)
-      setBreakSeconds(10) // 10 seconds break
+      setBreakSeconds(BREAK_TOTAL)
     }
     prevTimerRef.current = timerSeconds
   }, [timerSeconds])
@@ -156,6 +168,17 @@ export default function App() {
 
   const [showSignIn, setShowSignIn] = useState(false)
   const [showLeaderboard, setShowLeaderboard] = useState(false)
+  
+  // handle settings save
+  const handleSaveSettings = ({ workMinutes: w, breakMinutes: b }) => {
+    setWorkMinutes(w)
+    setBreakMinutes(b)
+    try {
+      localStorage.setItem('bf_work_minutes', String(w))
+      localStorage.setItem('bf_break_minutes', String(b))
+    } catch (e) {}
+    setShowSettings(false)
+  }
   // sync showLeaderboard with history (/leaderboard path)
   useEffect(() => {
     const updateFromLocation = () => setShowLeaderboard(window.location.pathname === '/leaderboard')
@@ -188,6 +211,7 @@ export default function App() {
         </div>
 
         <div className="header-right">
+          <button className="btn ghost" onClick={() => setShowSettings(true)}>Settings</button>
           <button className="btn ghost" onClick={() => { window.history.pushState({page:'leaderboard'}, '', '/leaderboard'); setShowLeaderboard(true) }}>Leaderboard</button>
           {user ? (
             <button className="btn ghost" onClick={handleSignOut}>Sign out</button>
@@ -246,6 +270,12 @@ export default function App() {
       {showSignIn && (
         <div className="bf-modal">
           <SignIn onSignIn={handleSignIn} />
+        </div>
+      )}
+
+      {showSettings && (
+        <div className="bf-modal">
+          <Settings workMinutes={workMinutes} breakMinutes={breakMinutes} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />
         </div>
       )}
     </div>
