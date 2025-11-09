@@ -9,6 +9,9 @@ export default function App() {
   const timerStartedRef = useRef(false)
   const START_SECONDS = 30 // development: 30 seconds
   const [phoneCount, setPhoneCount] = useState(0)
+  const [isOnBreak, setIsOnBreak] = useState(false)
+  const BREAK_TOTAL = 10
+  const [breakSeconds, setBreakSeconds] = useState(0)
 
   // countdown effect
   useEffect(() => {
@@ -20,6 +23,19 @@ export default function App() {
     }
     return () => { if (t) clearInterval(t) }
   }, [timerSeconds])
+
+  // break countdown
+  useEffect(() => {
+    let bt = null
+    if (breakSeconds > 0) {
+      bt = setInterval(() => setBreakSeconds(s => Math.max(0, s - 1)), 1000)
+    } else if (breakSeconds === 0 && isOnBreak) {
+      // break finished
+      setIsOnBreak(false)
+      timerStartedRef.current = false // allow new work session to start on next person
+    }
+    return () => { if (bt) clearInterval(bt) }
+  }, [breakSeconds, isOnBreak])
 
   // handle phone seen events from detector
   const handlePhoneSeen = () => {
@@ -104,6 +120,9 @@ export default function App() {
         playChime()
         vibrateAndFlashFallback()
       }
+      // start break timer when work session completes
+      setIsOnBreak(true)
+      setBreakSeconds(10) // 10 seconds break
     }
     prevTimerRef.current = timerSeconds
   }, [timerSeconds])
@@ -119,35 +138,30 @@ export default function App() {
         <section className="preview">
           <div>
             <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={true} />
-            <YoloDetector videoRef={videoRef} enabled={true} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} />
+            <YoloDetector videoRef={videoRef} enabled={!isOnBreak} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} />
           </div>
-          {showSummary && (
-            <div style={{position:'absolute',left:0,top:0,right:0,bottom:0,background:'rgba(0,0,0,0.85)',display:'flex',justifyContent:'center',alignItems:'center',zIndex:40}}>
-              <div style={{color:'#fff',textAlign:'center',padding:32,borderRadius:8,maxWidth:640}}>
-                <h1 style={{margin:0,fontSize:48}}>Time's up</h1>
-                <p style={{marginTop:12,fontSize:20}}>Phone was used <strong style={{fontSize:28}}>{phoneCount}</strong> time{phoneCount===1? '':'s'} during this session!</p>
-                <div style={{marginTop:20}}>
-                  <button onClick={() => {
-                    // reset session for development: clear count and allow timer to be started again
-                    timerStartedRef.current = false
-                    setPhoneCount(0)
-                    setTimerSeconds(0)
-                  }} style={{padding:'8px 14px',borderRadius:6,border:'none',background:'#06b6d4',color:'#042',fontWeight:700}}>Start break!</button>
-                </div>
-              </div>
-            </div>
-          )}
+          {/* integrated central summary: when the work timer has finished, show the session summary
+              and the break countdown in the main center area instead of a separate overlay */}
           <div style={{position:'absolute',left:0,right:0,top:0,bottom:0,display:'flex',justifyContent:'center',alignItems:'center',pointerEvents:'none'}}>
             <div style={{textAlign:'center',width:'100%',pointerEvents:'auto'}}>
               <div style={{marginBottom:16}}>
-                <div style={{color:'#fff',fontSize:28,fontWeight:700}}>Work time!</div>
+                <div style={{color:'#fff',fontSize:28,fontWeight:700}}>
+                  {(isOnBreak ? 'Break time!' : 'Work time!')}
+                </div>
               </div>
               <div style={{background:'rgba(0,0,0,0)',color:'#fff',padding:'12px 24px',borderRadius:8,fontSize:'48vh',fontWeight:700,fontFamily:'monospace'}}>
-                {formatTime(timerSeconds)}
+                {timerSeconds === 0 && timerStartedRef.current ? formatTime(breakSeconds) : (isOnBreak ? formatTime(breakSeconds) : formatTime(timerSeconds))}
               </div>
 
               {/* hidden audio element: place a file at public/chime.mp3 (served as /chime.mp3) */}
               <audio ref={audioRef} src="/chime.mp3" preload="auto" />
+
+              {/* session summary integrated below the timer when the session has finished */}
+              {timerSeconds === 0 && timerStartedRef.current ? (
+                <div style={{marginTop:18,color:'#fff'}}>
+                  <div style={{fontSize:20}}>Phone was used <strong style={{fontSize:24}}>{phoneCount}</strong> time{phoneCount===1 ? '' : 's'} during this session.</div>
+                </div>
+              ) : null}
 
               {/* flash indicator (visible when chime fallback fires) */}
               {flash && (
@@ -160,8 +174,8 @@ export default function App() {
                   <div
                     style={{
                       height:'100%',
-                      width: `${Math.max(0, Math.min(100, ((START_SECONDS - (timerSeconds > 0 ? timerSeconds : START_SECONDS)) / START_SECONDS) * 100)).toFixed(2)}%`,
-                      background: 'linear-gradient(90deg,#4ade80,#06b6d4)',
+                      width: `${isOnBreak ? Math.max(0, Math.min(100, ((BREAK_TOTAL - (breakSeconds > 0 ? breakSeconds : BREAK_TOTAL)) / BREAK_TOTAL) * 100)).toFixed(2) + '%' : Math.max(0, Math.min(100, ((START_SECONDS - (timerSeconds > 0 ? timerSeconds : START_SECONDS)) / START_SECONDS) * 100)).toFixed(2) + '%'}`,
+                      background: isOnBreak ? 'linear-gradient(90deg,#f97316,#f43f5e)' : 'linear-gradient(90deg,#4ade80,#06b6d4)',
                       transition: 'width 0.5s linear'
                     }}
                   />
