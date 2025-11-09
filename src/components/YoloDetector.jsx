@@ -68,9 +68,14 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
         const phonePresent = dets.some(d => {
           const id = Number(d.class_id)
           const score = Number(d.score || 0)
-          return (id === 67 || id === 68) && score > 0.25
+          return ((id === 67 || id === 68) && score > 0.5)
         })
-        if (phonePresent) startAlarm()
+        const humanNotPresent = dets.every(d => {
+          const id = Number(d.class_id)
+          const score = Number(d.score || 0)
+          return !(id === 0 && score > 0.5)
+        })
+        if (phonePresent || humanNotPresent) startAlarm()
         else stopAlarm()
 
         // rising-edge phone detection: notify parent once per pick-up

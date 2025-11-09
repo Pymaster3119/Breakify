@@ -40,6 +40,16 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(id)
         )
         ''')
+        # per-user settings
+        cur.execute('''
+        CREATE TABLE IF NOT EXISTS user_settings (
+            user_id INTEGER PRIMARY KEY,
+            work_minutes INTEGER NOT NULL DEFAULT 30,
+            break_minutes INTEGER NOT NULL DEFAULT 10,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        ''')
         conn.commit()
     finally:
         conn.close()
@@ -79,6 +89,39 @@ def record_session_for_user(username, duration_seconds, phone_count=0):
         cur = conn.cursor()
         now = datetime.utcnow().isoformat()
         cur.execute('INSERT INTO sessions (user_id, duration_seconds, phone_count, created_at) VALUES (?, ?, ?, ?)', (user['id'], int(duration_seconds), int(phone_count), now))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_user_settings(username):
+    user = find_user(username)
+    if not user:
+        return None
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        cur.execute('SELECT work_minutes, break_minutes FROM user_settings WHERE user_id = ?', (user['id'],))
+        row = cur.fetchone()
+        if not row:
+            return {'work_minutes': 30, 'break_minutes': 10}
+        return {'work_minutes': int(row[0]), 'break_minutes': int(row[1])}
+    finally:
+        conn.close()
+
+
+def set_user_settings(username, work_minutes, break_minutes):
+    user = find_user(username)
+    if not user:
+        raise ValueError('no such user')
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cur = conn.cursor()
+        now = datetime.utcnow().isoformat()
+        # upsert: try update first, then insert if no row affected
+        cur.execute('UPDATE user_settings SET work_minutes = ?, break_minutes = ?, updated_at = ? WHERE user_id = ?', (int(work_minutes), int(break_minutes), now, user['id']))
+        if cur.rowcount == 0:
+            cur.execute('INSERT INTO user_settings (user_id, work_minutes, break_minutes, updated_at) VALUES (?, ?, ?, ?)', (user['id'], int(work_minutes), int(break_minutes), now))
         conn.commit()
     finally:
         conn.close()
@@ -293,6 +336,31 @@ def api_me():
     if not username:
         return jsonify({'user': None})
     return jsonify({'user': {'name': username}})
+
+
+@app.route('/api/settings', methods=['GET', 'POST'])
+def api_settings():
+    username = session.get('user')
+    if not username:
+        return jsonify({'error': 'not authenticated'}), 401
+    if request.method == 'GET':
+        try:
+            s = get_user_settings(username)
+            return jsonify({'ok': True, 'settings': s})
+        except Exception as e:
+            return jsonify({'error': 'failed to load settings', 'detail': str(e)}), 500
+
+    # POST: set new settings
+    data = request.get_json() or {}
+    try:
+        work = int(data.get('work_minutes') or 30)
+        brk = int(data.get('break_minutes') or 10)
+        if work <= 0 or brk <= 0:
+            return jsonify({'error': 'invalid values'}), 400
+        set_user_settings(username, work, brk)
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': 'failed to save settings', 'detail': str(e)}), 500
 
 
 @app.route('/api/logout', methods=['POST'])

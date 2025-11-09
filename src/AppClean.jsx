@@ -28,7 +28,24 @@ export default function App() {
     let mounted = true
     fetch('http://localhost:6767/api/me', { credentials: 'include' })
       .then(r => r.json())
-      .then(data => { if (mounted && data && data.user) setUser(data.user) })
+      .then(async data => {
+        if (!mounted) return
+        if (data && data.user) {
+          setUser(data.user)
+          // try to load server-side settings for authenticated user
+          try {
+            const res = await fetch('http://localhost:6767/api/settings', { credentials: 'include' })
+            if (res.ok) {
+              const jd = await res.json()
+              if (jd && jd.ok && jd.settings) {
+                const s = jd.settings
+                if (s.work_minutes) setWorkMinutes(Number(s.work_minutes))
+                if (s.break_minutes) setBreakMinutes(Number(s.break_minutes))
+              }
+            }
+          } catch (e) {}
+        }
+      })
       .catch(() => {})
     return () => { mounted = false }
   }, [])
@@ -177,6 +194,17 @@ export default function App() {
       localStorage.setItem('bf_work_minutes', String(w))
       localStorage.setItem('bf_break_minutes', String(b))
     } catch (e) {}
+    // if user logged in, persist on server
+    try {
+      if (user && user.name) {
+        fetch('http://localhost:6767/api/settings', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ work_minutes: w, break_minutes: b })
+        }).catch(() => {})
+      }
+    } catch (e) {}
     setShowSettings(false)
   }
   // sync showLeaderboard with history (/leaderboard path)
@@ -190,6 +218,20 @@ export default function App() {
   const handleSignIn = userObj => {
     setUser(userObj)
     setShowSignIn(false)
+    // load server-side settings after sign in
+    (async () => {
+      try {
+        const res = await fetch('http://localhost:6767/api/settings', { credentials: 'include' })
+        if (res.ok) {
+          const jd = await res.json()
+          if (jd && jd.ok && jd.settings) {
+            const s = jd.settings
+            if (s.work_minutes) setWorkMinutes(Number(s.work_minutes))
+            if (s.break_minutes) setBreakMinutes(Number(s.break_minutes))
+          }
+        }
+      } catch (e) {}
+    })()
   }
 
   const handleSignOut = () => {
