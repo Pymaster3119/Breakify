@@ -9,6 +9,12 @@ export default function YoloDetector({ videoRef, enabled }) {
   const [error, setError] = useState(null)
   const overlayRef = useRef(null)
   const intervalRef = useRef(null)
+  // alarm refs
+  const alarmActiveRef = useRef(false)
+  const audioCtxRef = useRef(null)
+  const oscRef = useRef(null)
+  const gainRef = useRef(null)
+  const alarmPulseRef = useRef(null)
 
   useEffect(() => {
     if (!enabled) return
@@ -72,6 +78,14 @@ export default function YoloDetector({ videoRef, enabled }) {
             const label = `${d.class_id} ${(d.score * 100).toFixed(1)}%`
             ctx2.fillText(label, sx1 + 4, Math.max(16, sy1 + 16))
           })
+          // If any detection is class 67 or 68 (phone classes), trigger alarm
+          const phonePresent = dets.some(d => {
+            const id = Number(d.class_id)
+            const score = Number(d.score || 0)
+            return (id === 67 || id === 68) && score > 0.25
+          })
+          if (phonePresent) startAlarm()
+          else stopAlarm()
         }
       } catch (err) {
         console.error('server detect error', err)
@@ -91,8 +105,109 @@ export default function YoloDetector({ videoRef, enabled }) {
     return () => {
       mounted = false
       if (intervalRef.current) clearInterval(intervalRef.current)
+      // ensure alarm is stopped when component unmounts
+      stopAlarm()
     }
   }, [enabled, videoRef])
+
+  // Start a more standard pulsed alarm tone using WebAudio (two square oscillators + gated gain)
+  function startAlarm() {
+    if (alarmActiveRef.current) return
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext
+      if (!AudioCtx) return
+      const ac = audioCtxRef.current || new AudioCtx()
+      audioCtxRef.current = ac
+
+      // resume if suspended (autoplay policies)
+      if (ac.state === 'suspended' && typeof ac.resume === 'function') {
+        ac.resume().catch(() => {})
+      }
+
+      // Create two square oscillators to create a richer, harsher alarm tone
+      const oscA = ac.createOscillator()
+      const oscB = ac.createOscillator()
+      const gain = ac.createGain()
+      oscA.type = 'square'
+      oscB.type = 'square'
+      oscA.frequency.value = 1000
+      oscB.frequency.value = 1400
+      gain.gain.value = 0.0
+
+      oscA.connect(gain)
+      oscB.connect(gain)
+      gain.connect(ac.destination)
+
+      oscA.start()
+      oscB.start()
+
+      // Pulse the gain to create a beeping alarm: 400ms on, 300ms off pattern
+      let on = false
+      const pulseOn = () => {
+        if (!gain) return
+        try {
+          const now = ac.currentTime
+          gain.gain.cancelScheduledValues(now)
+          gain.gain.setValueAtTime(0, now)
+          gain.gain.linearRampToValueAtTime(0.12, now + 0.02)
+        } catch (e) {}
+        on = true
+      }
+      const pulseOff = () => {
+        if (!gain) return
+        try {
+          const now = ac.currentTime
+          gain.gain.cancelScheduledValues(now)
+          gain.gain.setValueAtTime(gain.gain.value || 0.12, now)
+          gain.gain.linearRampToValueAtTime(0, now + 0.05)
+        } catch (e) {}
+        on = false
+      }
+
+      // Start initial pulse immediately
+      pulseOn()
+      // schedule repeating pulse: on for 400ms, off for 300ms
+      alarmPulseRef.current = setInterval(() => {
+        if (on) pulseOff()
+        else pulseOn()
+      }, 400)
+
+      // store refs
+      oscRef.current = [oscA, oscB]
+      gainRef.current = gain
+      alarmActiveRef.current = true
+    } catch (e) {
+      console.warn('alarm start failed', e)
+    }
+  }
+
+  function stopAlarm() {
+    try {
+      if (alarmPulseRef.current) {
+        clearInterval(alarmPulseRef.current)
+        alarmPulseRef.current = null
+      }
+      if (oscRef.current) {
+        // stop both oscillators
+        try {
+          oscRef.current.forEach(o => { try { o.stop() } catch (e) {} })
+        } catch (e) {}
+        try { oscRef.current.forEach(o => { try { o.disconnect() } catch (e) {} }) } catch (e) {}
+        oscRef.current = null
+      }
+      if (gainRef.current) {
+        try { gainRef.current.disconnect() } catch (e) {}
+        gainRef.current = null
+      }
+      if (audioCtxRef.current) {
+        try { audioCtxRef.current.close() } catch (e) {}
+        audioCtxRef.current = null
+      }
+      alarmActiveRef.current = false
+    } catch (e) {
+      console.warn('alarm stop failed', e)
+    }
+  }
 
   return (
     <div style={{marginTop:12}}>
