@@ -26,7 +26,7 @@ export default function App() {
   // try to auto-login from server session
   useEffect(() => {
     let mounted = true
-    fetch('http://https://breakify-s9eu.onrender.com:6767/api/me', { credentials: 'include' })
+  fetch('https://breakify-s9eu.onrender.com/api/me', { credentials: 'include' })
       .then(r => r.json())
       .then(async data => {
         if (!mounted) return
@@ -34,7 +34,7 @@ export default function App() {
           setUser(data.user)
           // try to load server-side settings for authenticated user
           try {
-            const res = await fetch('http://https://breakify-s9eu.onrender.com:6767/api/settings', { credentials: 'include' })
+            const res = await fetch('https://breakify-s9eu.onrender.com/api/settings', { credentials: 'include' })
             if (res.ok) {
               const jd = await res.json()
               if (jd && jd.ok && jd.settings) {
@@ -214,7 +214,7 @@ export default function App() {
       // report completed work session to backend (for registered users)
       try {
         if (user && !user.isGuest) {
-          fetch('http://https://breakify-s9eu.onrender.com/api/session', {
+          fetch('https://breakify-s9eu.onrender.com/api/session', {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
@@ -265,8 +265,8 @@ export default function App() {
     } catch (e) {}
     // if user logged in, persist on server
     try {
-      if (user && user.name) {
-        fetch('http://https://breakify-s9eu.onrender.com/api/settings', {
+  if (user && user.name) {
+  fetch('https://breakify-s9eu.onrender.com/api/settings', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -290,7 +290,7 @@ export default function App() {
     // load server-side settings after sign in
     (async () => {
       try {
-        const res = await fetch('http://https://breakify-s9eu.onrender.com/api/settings', { credentials: 'include' })
+  const res = await fetch('https://breakify-s9eu.onrender.com/api/settings', { credentials: 'include' })
         if (res.ok) {
           const jd = await res.json()
           if (jd && jd.ok && jd.settings) {
@@ -305,7 +305,7 @@ export default function App() {
 
   const handleSignOut = () => {
     // inform server and clear local state
-    fetch('http://https://breakify-s9eu.onrender.com/api/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
+  fetch('https://breakify-s9eu.onrender.com/api/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
     setUser(null)
   }
   const progressPct = isOnBreak
@@ -408,7 +408,7 @@ export default function App() {
                                 try { localStorage.setItem('bf_last_session_notes', JSON.stringify(payload)) } catch (e) {}
                                 // send to server for authenticated users
                                 if (user && !user.isGuest) {
-                                  await fetch('http://https://breakify-s9eu.onrender.com/api/session/notes', {
+                                  await fetch('https://breakify-s9eu.onrender.com/api/session/notes', {
                                     method: 'POST',
                                     credentials: 'include',
                                     headers: { 'Content-Type': 'application/json' },

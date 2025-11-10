@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 
-const API_BASE = 'http://https://breakify-s9eu.onrender.com'
+const API_BASE = 'https://breakify-s9eu.onrender.com'
 
 export default function SignIn({ onSignIn }) {
   const [username, setUsername] = useState('')
