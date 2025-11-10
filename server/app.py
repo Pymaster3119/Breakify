@@ -167,7 +167,7 @@ def get_user_stats(username, limit=20):
 init_db()
 
 # Load YOLO model (will download if not present)
-MODEL_PATH = "yolo12x.pt"
+MODEL_PATH = "yolo12n.pt"
 if torch.backends.mps.is_available() and torch.backends.mps.is_built():
     DEVICE = 'mps'
 elif torch.cuda.is_available():
