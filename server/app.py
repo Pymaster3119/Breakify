@@ -1,11 +1,16 @@
 from flask import Flask, request, jsonify, send_from_directory, abort, session
 from flask_cors import CORS
-import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 from ultralytics import YOLO
 import torch
 import os
+
+# SQLAlchemy / PostgreSQL
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, func
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.exc import SQLAlchemyError
+
 
 app = Flask(__name__)
 # Secret key for session cookies (use env var in production)
@@ -13,137 +18,152 @@ app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
 # Allow cross-origin requests; allow credentials for cookie-based sessions
 CORS(app, supports_credentials=True)
 
-# --- simple sqlite user storage for hashed passwords ---
-# place users.db next to this file
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'users.db')
+# --- PostgreSQL via SQLAlchemy ---
+# Use DATABASE_URL env var if provided, otherwise fall back to the provided internal URL.
+# NOTE: This application will NOT fall back to sqlite; it uses Postgres only.
+PROVIDED_INTERNAL_DB_URL = 'postgresql://coredata_jhz6_user:GEGgtzwThfMPm0WrIEqkArIA75SUFbW3@dpg-d48j7dumcj7s73e0enqg-a/coredata_jhz6'
+DATABASE_URL = os.environ.get('DATABASE_URL', PROVIDED_INTERNAL_DB_URL)
+
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
+Base = declarative_base()
+
+
+class User(Base):
+    __tablename__ = 'users'
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    sessions = relationship('WorkSession', back_populates='user', cascade='all, delete-orphan')
+    settings = relationship('UserSettings', uselist=False, back_populates='user', cascade='all, delete-orphan')
+
+
+class WorkSession(Base):
+    __tablename__ = 'sessions'
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
+    duration_seconds = Column(Integer, nullable=False)
+    phone_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, nullable=False)
+    user = relationship('User', back_populates='sessions')
+
+
+class UserSettings(Base):
+    __tablename__ = 'user_settings'
+    user_id = Column(Integer, ForeignKey('users.id'), primary_key=True)
+    work_minutes = Column(Integer, nullable=False, default=30)
+    break_minutes = Column(Integer, nullable=False, default=10)
+    updated_at = Column(DateTime, nullable=False)
+    user = relationship('User', back_populates='settings')
+
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    # Create tables if they don't exist
+    Base.metadata.create_all(bind=engine)
+
+
+def get_db():
+    db = SessionLocal()
     try:
-        cur = conn.cursor()
-        cur.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-        ''')
-        # sessions table: records each finished work session for a user
-        cur.execute('''
-        CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            duration_seconds INTEGER NOT NULL,
-            phone_count INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id)
-        )
-        ''')
-        # per-user settings
-        cur.execute('''
-        CREATE TABLE IF NOT EXISTS user_settings (
-            user_id INTEGER PRIMARY KEY,
-            work_minutes INTEGER NOT NULL DEFAULT 30,
-            break_minutes INTEGER NOT NULL DEFAULT 10,
-            updated_at TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id)
-        )
-        ''')
-        conn.commit()
+        yield db
     finally:
-        conn.close()
+        db.close()
 
 def find_user(username):
-    conn = sqlite3.connect(DB_PATH)
+    db = SessionLocal()
     try:
-        cur = conn.cursor()
-        cur.execute('SELECT id, username, password_hash, created_at FROM users WHERE username = ?', (username,))
-        row = cur.fetchone()
-        if not row:
+        u = db.query(User).filter(User.username == username).first()
+        if not u:
             return None
-        return {'id': row[0], 'username': row[1], 'password_hash': row[2], 'created_at': row[3]}
+        return {'id': u.id, 'username': u.username, 'password_hash': u.password_hash, 'created_at': u.created_at}
     finally:
-        conn.close()
+        db.close()
 
 def create_user(username, password):
-    conn = sqlite3.connect(DB_PATH)
+    db = SessionLocal()
     try:
-        cur = conn.cursor()
         pw_hash = generate_password_hash(password)
-        now = datetime.utcnow().isoformat()
-        cur.execute('INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)', (username, pw_hash, now))
-        conn.commit()
+        now = datetime.utcnow()
+        u = User(username=username, password_hash=pw_hash, created_at=now)
+        db.add(u)
+        db.commit()
         return True
+    except SQLAlchemyError:
+        db.rollback()
+        raise
     finally:
-        conn.close()
+        db.close()
 
 
 def record_session_for_user(username, duration_seconds, phone_count=0):
-    # find user id
     user = find_user(username)
     if not user:
         raise ValueError('no such user')
-    conn = sqlite3.connect(DB_PATH)
+    db = SessionLocal()
     try:
-        cur = conn.cursor()
-        now = datetime.utcnow().isoformat()
-        cur.execute('INSERT INTO sessions (user_id, duration_seconds, phone_count, created_at) VALUES (?, ?, ?, ?)', (user['id'], int(duration_seconds), int(phone_count), now))
-        conn.commit()
+        now = datetime.utcnow()
+        s = WorkSession(user_id=user['id'], duration_seconds=int(duration_seconds), phone_count=int(phone_count), created_at=now)
+        db.add(s)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
     finally:
-        conn.close()
+        db.close()
 
 
 def get_user_settings(username):
     user = find_user(username)
     if not user:
         return None
-    conn = sqlite3.connect(DB_PATH)
+    db = SessionLocal()
     try:
-        cur = conn.cursor()
-        cur.execute('SELECT work_minutes, break_minutes FROM user_settings WHERE user_id = ?', (user['id'],))
-        row = cur.fetchone()
-        if not row:
+        s = db.query(UserSettings).filter(UserSettings.user_id == user['id']).first()
+        if not s:
             return {'work_minutes': 30, 'break_minutes': 10}
-        return {'work_minutes': int(row[0]), 'break_minutes': int(row[1])}
+        return {'work_minutes': int(s.work_minutes), 'break_minutes': int(s.break_minutes)}
     finally:
-        conn.close()
+        db.close()
 
 
 def set_user_settings(username, work_minutes, break_minutes):
     user = find_user(username)
     if not user:
         raise ValueError('no such user')
-    conn = sqlite3.connect(DB_PATH)
+    db = SessionLocal()
     try:
-        cur = conn.cursor()
-        now = datetime.utcnow().isoformat()
-        # upsert: try update first, then insert if no row affected
-        cur.execute('UPDATE user_settings SET work_minutes = ?, break_minutes = ?, updated_at = ? WHERE user_id = ?', (int(work_minutes), int(break_minutes), now, user['id']))
-        if cur.rowcount == 0:
-            cur.execute('INSERT INTO user_settings (user_id, work_minutes, break_minutes, updated_at) VALUES (?, ?, ?, ?)', (user['id'], int(work_minutes), int(break_minutes), now))
-        conn.commit()
+        now = datetime.utcnow()
+        s = db.query(UserSettings).filter(UserSettings.user_id == user['id']).first()
+        if s:
+            s.work_minutes = int(work_minutes)
+            s.break_minutes = int(break_minutes)
+            s.updated_at = now
+        else:
+            s = UserSettings(user_id=user['id'], work_minutes=int(work_minutes), break_minutes=int(break_minutes), updated_at=now)
+            db.add(s)
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        raise
     finally:
-        conn.close()
+        db.close()
 
 
 def get_user_stats(username, limit=20):
     user = find_user(username)
     if not user:
         return None
-    conn = sqlite3.connect(DB_PATH)
+    db = SessionLocal()
     try:
-        cur = conn.cursor()
-        cur.execute('SELECT SUM(duration_seconds) FROM sessions WHERE user_id = ?', (user['id'],))
-        total = cur.fetchone()[0] or 0
-        cur.execute('SELECT id, duration_seconds, phone_count, created_at FROM sessions WHERE user_id = ? ORDER BY id DESC LIMIT ?', (user['id'], limit))
-        rows = cur.fetchall()
-        recent = [{'id': r[0], 'duration_seconds': r[1], 'phone_count': r[2], 'created_at': r[3]} for r in rows]
+        total = db.query(func.coalesce(func.sum(WorkSession.duration_seconds), 0)).filter(WorkSession.user_id == user['id']).scalar() or 0
+        rows = db.query(WorkSession).filter(WorkSession.user_id == user['id']).order_by(WorkSession.id.desc()).limit(limit).all()
+        recent = [{'id': r.id, 'duration_seconds': r.duration_seconds, 'phone_count': r.phone_count, 'created_at': r.created_at.isoformat()} for r in rows]
         return {'total_seconds': int(total), 'recent_sessions': recent}
     finally:
-        conn.close()
+        db.close()
 
-# initialize DB at startup
+# initialize DB (create tables) at startup
 init_db()
 
 # Load YOLO model (will download if not present)
@@ -296,22 +316,24 @@ def api_stats():
 @app.route('/api/leaderboard')
 def api_leaderboard():
     # Public endpoint: return users ordered by total worked seconds (desc)
-    conn = sqlite3.connect(DB_PATH)
+    db = SessionLocal()
     try:
-        cur = conn.cursor()
-        cur.execute('''
-        SELECT u.username, IFNULL(SUM(s.duration_seconds), 0) as total_seconds, COUNT(s.id) as session_count
-        FROM users u
-        LEFT JOIN sessions s ON s.user_id = u.id
-        GROUP BY u.id
-        ORDER BY total_seconds DESC
-        LIMIT 100
-        ''')
-        rows = cur.fetchall()
+        q = (
+            db.query(
+                User.username,
+                func.coalesce(func.sum(WorkSession.duration_seconds), 0).label('total_seconds'),
+                func.count(WorkSession.id).label('session_count'),
+            )
+            .outerjoin(WorkSession, User.id == WorkSession.user_id)
+            .group_by(User.id)
+            .order_by(func.coalesce(func.sum(WorkSession.duration_seconds), 0).desc())
+            .limit(100)
+        )
+        rows = q.all()
         result = [{'username': r[0], 'total_seconds': int(r[1]), 'session_count': int(r[2])} for r in rows]
         return jsonify({'ok': True, 'leaderboard': result})
     finally:
-        conn.close()
+        db.close()
 
 
 @app.route('/api/login', methods=['POST'])

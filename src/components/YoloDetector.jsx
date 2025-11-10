@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 
 // Server-based YOLO detector. Captures frames from the provided video element and POSTs them
-// to the local Flask server at http://localhost:6767/predict. The server returns decoded
+// to the local Flask server at http://https://breakify-s9eu.onrender.com/predict. The server returns decoded
 // detections (class_id, score, bbox) and this component draws them on an overlay canvas.
 
 export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPhoneSeen }) {
@@ -47,7 +47,7 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
         form.append('image', blob, 'frame.jpg')
 
         sendingRef.current = true
-        const resp = await fetch('http://localhost:6767/predict?img_size=' + imgSize, {
+        const resp = await fetch('http://https://breakify-s9eu.onrender.com/predict?img_size=' + imgSize, {
           method: 'POST',
           body: form
         })
