@@ -285,12 +285,18 @@ export default function App() {
   }, [])
 
   const handleSignIn = userObj => {
+    // Debug: log the setter's runtime value and guard against the previously observed TypeError
+    try { console.debug('handleSignIn: setShowSignIn=', setShowSignIn, 'typeof=', typeof setShowSignIn) } catch (e) {}
     setUser(userObj)
-    setShowSignIn(false)
+    if (typeof setShowSignIn === 'function') {
+      try { setShowSignIn(false) } catch (e) { console.error('setShowSignIn call failed', e) }
+    } else {
+      console.error('setShowSignIn is not a function at handleSignIn', setShowSignIn)
+    }
     // load server-side settings after sign in
     (async () => {
       try {
-  const res = await fetch('https://breakify-s9eu.onrender.com/api/settings', { credentials: 'include' })
+        const res = await fetch('https://breakify-s9eu.onrender.com/api/settings', { credentials: 'include' })
         if (res.ok) {
           const jd = await res.json()
           if (jd && jd.ok && jd.settings) {

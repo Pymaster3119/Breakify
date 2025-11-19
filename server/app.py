@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory, abort, session
+from flask import Flask, request, jsonify, send_from_directory, abort, session, make_response
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
@@ -10,17 +10,21 @@ import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, func
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.exc import SQLAlchemyError
+from flask.sessions import SecureCookieSessionInterface
 
 
 app = Flask(__name__)
-# Secret key for session cookies (use env var in production)
 app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
-# Allow cross-origin requests; allow credentials for cookie-based sessions
-CORS(app, supports_credentials=True)
 
-# --- PostgreSQL via SQLAlchemy ---
-# Use DATABASE_URL env var if provided, otherwise fall back to the provided internal URL.
-# NOTE: This application will NOT fall back to sqlite; it uses Postgres only.
+FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', 'https://breakify-orcin.vercel.app')
+
+app.config.update(
+    SESSION_COOKIE_SECURE=not os.environ.get('DEV', '') ,
+    SESSION_COOKIE_SAMESITE='None',
+    SESSION_COOKIE_HTTPONLY=True,
+)
+CORS(app, supports_credentials=True, origins=[FRONTEND_ORIGIN])
+
 PROVIDED_INTERNAL_DB_URL = 'postgresql://coredata_jhz6_user:GEGgtzwThfMPm0WrIEqkArIA75SUFbW3@dpg-d48j7dumcj7s73e0enqg-a/coredata_jhz6'
 DATABASE_URL = os.environ.get('DATABASE_URL', PROVIDED_INTERNAL_DB_URL)
 
@@ -61,6 +65,24 @@ class UserSettings(Base):
 def init_db():
     # Create tables if they don't exist
     Base.metadata.create_all(bind=engine)
+
+
+def set_session_cookie(resp):
+    try:
+        ssi = SecureCookieSessionInterface()
+        serializer = ssi.get_signing_serializer(app)
+        if not serializer:
+            return resp
+        cookie_val = serializer.dumps(dict(session))
+        secure_flag = bool(app.config.get('SESSION_COOKIE_SECURE'))
+        resp.set_cookie(app.session_cookie_name, cookie_val,
+                        httponly=bool(app.config.get('SESSION_COOKIE_HTTPONLY', True)),
+                        secure=secure_flag,
+                        samesite='None',
+                        path='/')
+    except Exception:
+        pass
+    return resp
 
 
 def get_db():
@@ -279,7 +301,9 @@ def api_register():
     try:
         create_user(username, password)
         session['user'] = username
-        return jsonify({'ok': True, 'user': {'name': username}})
+        resp = make_response(jsonify({'ok': True, 'user': {'name': username}}))
+        resp = set_session_cookie(resp)
+        return resp
     except Exception as e:
         return jsonify({'error': 'failed to create user', 'detail': str(e)}), 500
 
@@ -349,7 +373,9 @@ def api_login():
     if not check_password_hash(user['password_hash'], password):
         return jsonify({'error': 'invalid credentials'}), 401
     session['user'] = username
-    return jsonify({'ok': True, 'user': {'name': username}})
+    resp = make_response(jsonify({'ok': True, 'user': {'name': username}}))
+    resp = set_session_cookie(resp)
+    return resp
 
 
 @app.route('/api/me')
@@ -388,7 +414,9 @@ def api_settings():
 @app.route('/api/logout', methods=['POST'])
 def api_logout():
     session.pop('user', None)
-    return jsonify({'ok': True})
+    resp = make_response(jsonify({'ok': True}))
+    resp.set_cookie(app.session_cookie_name, '', expires=0, path='/')
+    return resp
 
 
 if __name__ == "__main__":
