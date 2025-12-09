@@ -287,7 +287,9 @@ export default function App() {
   const handleSignIn = userObj => {
     // Debug: log the setter's runtime value and guard against the previously observed TypeError
     try { console.debug('handleSignIn: setShowSignIn=', setShowSignIn, 'typeof=', typeof setShowSignIn) } catch (e) {}
+    console.debug('[handleSignIn] User object received:', userObj)
     setUser(userObj)
+    console.debug('[handleSignIn] User state updated to:', userObj)
     if (typeof setShowSignIn === 'function') {
       try { setShowSignIn(false) } catch (e) { console.error('setShowSignIn call failed', e) }
     } else {
@@ -296,16 +298,21 @@ export default function App() {
     // load server-side settings after sign in
     (async () => {
       try {
+        console.debug('[handleSignIn] Fetching settings from server')
         const res = await fetch('https://breakify-s9eu.onrender.com/api/settings', { credentials: 'include' })
+        console.debug('[handleSignIn] Settings response status:', res.status)
         if (res.ok) {
           const jd = await res.json()
+          console.debug('[handleSignIn] Settings data received:', jd)
           if (jd && jd.ok && jd.settings) {
             const s = jd.settings
             if (s.work_minutes) setWorkMinutes(Number(s.work_minutes))
             if (s.break_minutes) setBreakMinutes(Number(s.break_minutes))
           }
+        } else {
+          console.warn('[handleSignIn] Settings fetch failed with status', res.status)
         }
-      } catch (e) {}
+      } catch (e) { console.error('[handleSignIn] Settings fetch error:', e) }
     })()
   }
 

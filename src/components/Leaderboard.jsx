@@ -17,16 +17,20 @@ export default function Leaderboard({ onClose }) {
 
   useEffect(() => {
     let mounted = true
+    console.debug('[Leaderboard] Mounted, fetching current user and leaderboard')
     // fetch current user and leaderboard in parallel
     Promise.all([
   fetch('https://breakify-s9eu.onrender.com/api/me', { credentials: 'include' }).then(r => r.json()).catch(() => ({ user: null })),
   fetch('https://breakify-s9eu.onrender.com/api/leaderboard', { credentials: 'include' }).then(r => r.json()).catch(() => ({ ok: false }))
     ]).then(([meData, lbData]) => {
       if (!mounted) return
-      setMe(meData && meData.user ? meData.user : null)
+      console.debug('[Leaderboard] Responses received:', { meData, lbData })
+      const currentUser = meData && meData.user ? meData.user : null
+      setMe(currentUser)
+      console.debug('[Leaderboard] Current user set to:', currentUser)
       if (lbData && lbData.ok) setRows(lbData.leaderboard)
       else setErr((lbData && lbData.error) || 'Failed to load leaderboard')
-    }).catch(() => { if (mounted) setErr('Network error') })
+    }).catch((err) => { if (mounted) { console.error('[Leaderboard] Fetch error:', err); setErr('Network error') } })
     return () => { mounted = false }
   }, [])
 
