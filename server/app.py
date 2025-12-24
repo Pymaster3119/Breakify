@@ -189,7 +189,7 @@ def get_user_stats(username, limit=20):
 init_db()
 
 # Load YOLO model (will download if not present)
-MODEL_PATH = "yolo12n.pt"
+MODEL_PATH = os.environ.get('YOLO_MODEL_PATH', 'yolov10n.pt')
 if torch.backends.mps.is_available() and torch.backends.mps.is_built():
     DEVICE = 'mps'
 elif torch.cuda.is_available():
@@ -197,22 +197,43 @@ elif torch.cuda.is_available():
 else:
     DEVICE = 'cpu'
 
-print(f"Loading model on device: {DEVICE}")
-model = YOLO(MODEL_PATH)
+# Memory-friendly inference configuration (env-overridable)
+IMG_SIZE = int(os.environ.get('YOLO_IMG_SIZE', '512'))
+CONF = float(os.environ.get('YOLO_CONF', '0.25'))
+IOU = float(os.environ.get('YOLO_IOU', '0.45'))
+MAX_DET = int(os.environ.get('YOLO_MAX_DET', '50'))
+# Use FP16 only on CUDA unless disabled via YOLO_FP16=0
+USE_HALF = bool(torch.cuda.is_available() and os.environ.get('YOLO_FP16', '1') != '0')
 
-try:
-    try:
-        model.to(DEVICE)
-    except Exception:
-        # fallback: access underlying model attribute
-        if hasattr(model, 'model'):
-            try:
-                model.model.to(DEVICE)
-            except Exception:
-                pass
-except Exception:
-    # not fatal; inference will try to run on default device
-    pass
+_model = None
+
+def get_model():
+    global _model
+    if _model is None:
+        print(f"Loading model {MODEL_PATH} on device: {DEVICE}")
+        m = YOLO(MODEL_PATH)
+        try:
+            m.to(DEVICE)
+            # eval mode avoids grad buffers
+            if hasattr(m, 'eval'):
+                m.eval()
+            # fuse conv+bn if supported (small memory/speed benefits)
+            if hasattr(m, 'fuse'):
+                try:
+                    m.fuse()
+                except Exception:
+                    pass
+        except Exception:
+            # fallback: access underlying model attribute
+            if hasattr(m, 'model'):
+                try:
+                    m.model.to(DEVICE)
+                    if hasattr(m.model, 'eval'):
+                        m.model.eval()
+                except Exception:
+                    pass
+        _model = m
+    return _model
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 CAPTURES_DIR = os.path.join(THIS_DIR, 'captures')
@@ -241,9 +262,26 @@ def predict():
     except Exception as e:
         return jsonify({"error": "Failed to save uploaded image", "detail": str(e)}), 500
 
-    # Run YOLO inference on the saved image
+    # Run YOLO inference on the saved image (memory-optimized)
     try:
-        results = model(last_path)
+        mdl = get_model()
+        with torch.inference_mode():
+            results = mdl.predict(
+                last_path,
+                imgsz=IMG_SIZE,
+                conf=CONF,
+                iou=IOU,
+                max_det=MAX_DET,
+                device=DEVICE,
+                half=USE_HALF,
+                verbose=False,
+            )
+        # free CUDA caches after inference to keep peak memory lower
+        if DEVICE == 'cuda':
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
     except Exception as e:
         return jsonify({"error": "Model inference failed", "detail": str(e)}), 500
 
@@ -421,4 +459,4 @@ def api_logout():
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 6767))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    app.run(host='0.0.0.0', port=port)
