@@ -25,7 +25,7 @@ app.config.update(
 )
 CORS(app, supports_credentials=True, origins=[FRONTEND_ORIGIN])
 
-PROVIDED_INTERNAL_DB_URL = 'postgresql://neondb_owner:npg_4xoZlbS0UNIC@ep-damp-base-adoyetgg-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require'
+PROVIDED_INTERNAL_DB_URL = 'postgresql://neondb_owner:npg_4xoZlbS0UNIC@ep-damp-base-adoyetgg-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require'
 DATABASE_URL = os.environ.get('DATABASE_URL', PROVIDED_INTERNAL_DB_URL)
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
