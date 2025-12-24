@@ -20,8 +20,8 @@ export default function Leaderboard({ onClose }) {
     console.debug('[Leaderboard] Mounted, fetching current user and leaderboard')
     // fetch current user and leaderboard in parallel
     Promise.all([
-  fetch('https://breakify-s9eu.onrender.com/api/me', { credentials: 'include' }).then(r => r.json()).catch(() => ({ user: null })),
-  fetch('https://breakify-s9eu.onrender.com/api/leaderboard', { credentials: 'include' }).then(r => r.json()).catch(() => ({ ok: false }))
+  fetch('https://https://breakify-backend.onrender.com/api/me', { credentials: 'include' }).then(r => r.json()).catch(() => ({ user: null })),
+  fetch('https://https://breakify-backend.onrender.com/api/leaderboard', { credentials: 'include' }).then(r => r.json()).catch(() => ({ ok: false }))
     ]).then(([meData, lbData]) => {
       if (!mounted) return
       console.debug('[Leaderboard] Responses received:', { meData, lbData })
