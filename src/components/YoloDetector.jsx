@@ -47,7 +47,7 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
         form.append('image', blob, 'frame.jpg')
 
         sendingRef.current = true
-        const resp = await fetch('https://https://breakify-backend.onrender.com/predict?img_size=' + imgSize, {
+        const resp = await fetch('https://breakify-backend.onrender.com/predict?img_size=' + imgSize, {
           method: 'POST',
           body: form
         })
