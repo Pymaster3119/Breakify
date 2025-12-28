@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 
 // Server-based YOLO detector. Captures frames from the provided video element and POSTs them
-// to the server at https://https://breakify-backend.onrender.com/predict. The server returns decoded
+// to the server at https://breakify-backend.onrender.com/predict. The server returns decoded
 // detections (class_id, score, bbox) and this component draws them on an overlay canvas.
 
 export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPhoneSeen }) {

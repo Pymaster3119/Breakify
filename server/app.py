@@ -16,7 +16,7 @@ from flask.sessions import SecureCookieSessionInterface
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
 
-FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', 'https://breakify-orcin.vercel.app')
+FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', 'https://breakify-3d5p.onrender.com')
 
 app.config.update(
     SESSION_COOKIE_SECURE=not os.environ.get('DEV', '') ,
