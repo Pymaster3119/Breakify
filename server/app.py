@@ -10,7 +10,6 @@ import os
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, func
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.exc import SQLAlchemyError
-from flask.sessions import SecureCookieSessionInterface
 
 
 app = Flask(__name__)
@@ -18,12 +17,23 @@ app.secret_key = os.environ.get('SECRET_KEY') or os.urandom(24)
 
 FRONTEND_ORIGIN = os.environ.get('FRONTEND_ORIGIN', 'https://breakify-3d5p.onrender.com')
 
+# SESSION_COOKIE_SECURE should be True in production (when DEV is not set)
+IS_DEV = os.environ.get('DEV', '').lower() in ('1', 'true', 'yes')
+
 app.config.update(
-    SESSION_COOKIE_SECURE=not os.environ.get('DEV', '') ,
-    SESSION_COOKIE_SAMESITE='None',
+    SESSION_COOKIE_SECURE=not IS_DEV,
+    SESSION_COOKIE_SAMESITE='None' if not IS_DEV else 'Lax',
     SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_DOMAIN=None,  # Let browser handle domain
 )
-CORS(app, supports_credentials=True, origins=[FRONTEND_ORIGIN])
+
+# CORS configuration with explicit resource configuration
+CORS(app, 
+     supports_credentials=True, 
+     origins=[FRONTEND_ORIGIN],
+     allow_headers=['Content-Type', 'Authorization'],
+     expose_headers=['Set-Cookie'],
+     methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 
 PROVIDED_INTERNAL_DB_URL = 'postgresql://neondb_owner:npg_4xoZlbS0UNIC@ep-damp-base-adoyetgg-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require'
 DATABASE_URL = os.environ.get('DATABASE_URL', PROVIDED_INTERNAL_DB_URL)
@@ -65,24 +75,6 @@ class UserSettings(Base):
 def init_db():
     # Create tables if they don't exist
     Base.metadata.create_all(bind=engine)
-
-
-def set_session_cookie(resp):
-    try:
-        ssi = SecureCookieSessionInterface()
-        serializer = ssi.get_signing_serializer(app)
-        if not serializer:
-            return resp
-        cookie_val = serializer.dumps(dict(session))
-        secure_flag = bool(app.config.get('SESSION_COOKIE_SECURE'))
-        resp.set_cookie(app.session_cookie_name, cookie_val,
-                        httponly=bool(app.config.get('SESSION_COOKIE_HTTPONLY', True)),
-                        secure=secure_flag,
-                        samesite='None',
-                        path='/')
-    except Exception:
-        pass
-    return resp
 
 
 def get_db():
@@ -339,9 +331,8 @@ def api_register():
     try:
         create_user(username, password)
         session['user'] = username
-        resp = make_response(jsonify({'ok': True, 'user': {'name': username}}))
-        resp = set_session_cookie(resp)
-        return resp
+        session.modified = True  # Ensure session is marked as modified
+        return jsonify({'ok': True, 'user': {'name': username}})
     except Exception as e:
         return jsonify({'error': 'failed to create user', 'detail': str(e)}), 500
 
@@ -411,9 +402,8 @@ def api_login():
     if not check_password_hash(user['password_hash'], password):
         return jsonify({'error': 'invalid credentials'}), 401
     session['user'] = username
-    resp = make_response(jsonify({'ok': True, 'user': {'name': username}}))
-    resp = set_session_cookie(resp)
-    return resp
+    session.modified = True  # Ensure session is marked as modified
+    return jsonify({'ok': True, 'user': {'name': username}})
 
 
 @app.route('/api/me')
