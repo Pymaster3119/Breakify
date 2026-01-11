@@ -5,3 +5,8 @@ dist/
 .DS_Store
 yolo*.pt
 server/users.db
+*.bin
+*.pb
+*.onnx
+*.tflite
+*.index
