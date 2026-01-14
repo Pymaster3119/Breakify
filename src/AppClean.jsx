@@ -23,24 +23,33 @@ export default function App() {
   const START_SECONDS = workMinutes * 60
   const [phoneCount, setPhoneCount] = useState(0)
   const [user, setUser] = useState(null)
+  const logCookie = label => {
+    try {
+      console.debug('[cookie]', label, { cookie: document.cookie, origin: window.location.origin, at: new Date().toISOString() })
+    } catch (e) {}
+  }
   // try to auto-login from server session
   useEffect(() => {
     let mounted = true
-    console.debug('[bootstrap] fetch /api/me (with credentials)', { cookies: document.cookie })
+    console.debug('[bootstrap] fetch /api/me (with credentials)')
+    logCookie('bootstrap before /api/me')
     fetch('https://breakify-backend.onrender.com/api/me', { credentials: 'include' })
       .then(async r => {
         console.debug('[bootstrap] /api/me response', { status: r.status, ok: r.ok, url: r.url, headers: Object.fromEntries(r.headers.entries()) })
+        logCookie('bootstrap after /api/me response')
         return r.json()
       })
       .then(async data => {
         if (!mounted) return
         if (data && data.user) {
           setUser(data.user)
-          console.debug('[bootstrap] user detected, fetching /api/settings next', { cookies: document.cookie })
+          console.debug('[bootstrap] user detected, fetching /api/settings next')
+          logCookie('bootstrap before /api/settings')
           // try to load server-side settings for authenticated user
           try {
             const res = await fetch('https://breakify-backend.onrender.com/api/settings', { credentials: 'include' })
             console.debug('[bootstrap] /api/settings response', { status: res.status, ok: res.ok, url: res.url, headers: Object.fromEntries(res.headers.entries()) })
+            logCookie('bootstrap after /api/settings response')
             if (res.ok) {
               const jd = await res.json()
               console.debug('[bootstrap] settings payload', jd)
@@ -273,7 +282,8 @@ export default function App() {
     // if user logged in, persist on server
     try {
       if (user && user.name) {
-        console.debug('[settings] POST /api/settings', { w, b, user, cookies: document.cookie })
+        console.debug('[settings] POST /api/settings', { w, b, user })
+        logCookie('before POST /api/settings')
         fetch('https://breakify-backend.onrender.com/api/settings', {
           method: 'POST',
           credentials: 'include',
@@ -283,6 +293,7 @@ export default function App() {
           .then(async res => {
             const body = await res.text().catch(() => '(body read failed)')
             console.debug('[settings] POST response', { status: res.status, ok: res.ok, url: res.url, headers: Object.fromEntries(res.headers.entries()), body })
+            logCookie('after POST /api/settings response')
           })
           .catch(err => console.error('[settings] POST error', err))
       }
@@ -303,6 +314,8 @@ export default function App() {
     console.debug('[handleSignIn] User object received:', userObj)
     setUser(userObj)
     console.debug('[handleSignIn] User state updated to:', userObj)
+    logCookie('handleSignIn immediately after state set')
+    setTimeout(() => logCookie('handleSignIn +500ms'), 500)
     if (typeof setShowSignIn === 'function') {
       try { setShowSignIn(false) } catch (e) { console.error('setShowSignIn call failed', e) }
     } else {
@@ -311,7 +324,8 @@ export default function App() {
     // load server-side settings after sign in
     (async () => {
       try {
-        console.debug('[handleSignIn] Fetching settings from server', { cookies: document.cookie })
+        console.debug('[handleSignIn] Fetching settings from server')
+        logCookie('handleSignIn before /api/settings')
         const res = await fetch('https://breakify-backend.onrender.com/api/settings', { credentials: 'include' })
         console.debug('[handleSignIn] Settings response', {
           status: res.status,
@@ -319,6 +333,7 @@ export default function App() {
           url: res.url,
           headers: Object.fromEntries(res.headers.entries())
         })
+        logCookie('handleSignIn after /api/settings response')
         if (res.ok) {
           const jd = await res.json()
           console.debug('[handleSignIn] Settings data received:', jd)
@@ -328,7 +343,7 @@ export default function App() {
             if (s.break_minutes) setBreakMinutes(Number(s.break_minutes))
           }
         } else {
-          console.warn('[handleSignIn] Settings fetch failed with status', res.status, 'cookies now', document.cookie)
+          console.warn('[handleSignIn] Settings fetch failed with status', res.status)
         }
       } catch (e) { console.error('[handleSignIn] Settings fetch error:', e) }
     })()

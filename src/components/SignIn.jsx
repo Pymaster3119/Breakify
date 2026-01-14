@@ -9,6 +9,12 @@ export default function SignIn({ onSignIn }) {
   const [msg, setMsg] = useState('')
   const [loading, setLoading] = useState(false)
 
+  const logCookie = label => {
+    try {
+      console.debug('[cookie]', label, { cookie: document.cookie, origin: window.location.origin, at: new Date().toISOString() })
+    } catch (e) {}
+  }
+
   const submit = async e => {
     e.preventDefault()
     setMsg('')
@@ -20,6 +26,7 @@ export default function SignIn({ onSignIn }) {
     const endpoint = isRegistering ? '/api/register' : '/api/login'
     console.debug('[auth] submitting', { endpoint, url: API_BASE + endpoint, username: u, withCredentials: true, cookies: document.cookie })
     setLoading(true)
+    logCookie('before auth fetch')
     try {
       const res = await fetch(API_BASE + endpoint, {
         method: 'POST',
@@ -27,13 +34,20 @@ export default function SignIn({ onSignIn }) {
         credentials: 'include',
         body: JSON.stringify({ username: u, password: p })
       })
+      const allHeaders = Object.fromEntries(res.headers.entries())
       console.debug('[auth] response', {
         status: res.status,
         ok: res.ok,
         url: res.url,
         redirected: res.redirected,
         type: res.type,
-        headers: Object.fromEntries(res.headers.entries())
+        headers: allHeaders
+      })
+      console.debug('[auth] CORS/Cookie checks:', {
+        'Access-Control-Allow-Credentials': allHeaders['access-control-allow-credentials'],
+        'Access-Control-Allow-Origin': allHeaders['access-control-allow-origin'],
+        'Set-Cookie': allHeaders['set-cookie'] || '(not visible in JS - check Network tab)',
+        'Expected Origin': window.location.origin
       })
       const data = await res.json()
       if (!res.ok) {
@@ -43,6 +57,8 @@ export default function SignIn({ onSignIn }) {
       }
       // success
       setLoading(false)
+      logCookie('after login immediate')
+      setTimeout(() => logCookie('after login +500ms'), 500)
       console.debug('[auth] success, user payload', data.user)
       onSignIn(data.user || { name: u })
     } catch (err) {
