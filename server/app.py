@@ -403,28 +403,44 @@ def api_login():
         return jsonify({'error': 'invalid credentials'}), 401
     session['user'] = username
     session.modified = True  # Ensure session is marked as modified
-    return jsonify({'ok': True, 'user': {'name': username}})
+    resp = make_response(jsonify({'ok': True, 'user': {'name': username}}))
+    resp.headers['Access-Control-Allow-Credentials'] = 'true'
+    resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
+    return resp
 
 
 @app.route('/api/me')
 def api_me():
     username = session.get('user')
     if not username:
-        return jsonify({'user': None})
-    return jsonify({'user': {'name': username}})
+        resp = make_response(jsonify({'user': None}))
+    else:
+        resp = make_response(jsonify({'user': {'name': username}}))
+    resp.headers['Access-Control-Allow-Credentials'] = 'true'
+    resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
+    return resp
 
 
 @app.route('/api/settings', methods=['GET', 'POST'])
 def api_settings():
     username = session.get('user')
     if not username:
-        return jsonify({'error': 'not authenticated'}), 401
+        resp = make_response(jsonify({'error': 'not authenticated'}), 401)
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
+        return resp
     if request.method == 'GET':
         try:
             s = get_user_settings(username)
-            return jsonify({'ok': True, 'settings': s})
+            resp = make_response(jsonify({'ok': True, 'settings': s}))
+            resp.headers['Access-Control-Allow-Credentials'] = 'true'
+            resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
+            return resp
         except Exception as e:
-            return jsonify({'error': 'failed to load settings', 'detail': str(e)}), 500
+            resp = make_response(jsonify({'error': 'failed to load settings', 'detail': str(e)}), 500)
+            resp.headers['Access-Control-Allow-Credentials'] = 'true'
+            resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
+            return resp
 
     # POST: set new settings
     data = request.get_json() or {}
@@ -432,11 +448,20 @@ def api_settings():
         work = int(data.get('work_minutes') or 30)
         brk = int(data.get('break_minutes') or 10)
         if work <= 0 or brk <= 0:
-            return jsonify({'error': 'invalid values'}), 400
+            resp = make_response(jsonify({'error': 'invalid values'}), 400)
+            resp.headers['Access-Control-Allow-Credentials'] = 'true'
+            resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
+            return resp
         set_user_settings(username, work, brk)
-        return jsonify({'ok': True})
+        resp = make_response(jsonify({'ok': True}))
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
+        return resp
     except Exception as e:
-        return jsonify({'error': 'failed to save settings', 'detail': str(e)}), 500
+        resp = make_response(jsonify({'error': 'failed to save settings', 'detail': str(e)}), 500)
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
+        return resp
 
 
 @app.route('/api/logout', methods=['POST'])
