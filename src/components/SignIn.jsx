@@ -18,6 +18,7 @@ export default function SignIn({ onSignIn }) {
     if (!p) return setMsg('Please enter a password')
 
     const endpoint = isRegistering ? '/api/register' : '/api/login'
+    console.debug('[auth] submitting', { endpoint, url: API_BASE + endpoint, username: u, withCredentials: true, cookies: document.cookie })
     setLoading(true)
     try {
       const res = await fetch(API_BASE + endpoint, {
@@ -25,6 +26,14 @@ export default function SignIn({ onSignIn }) {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ username: u, password: p })
+      })
+      console.debug('[auth] response', {
+        status: res.status,
+        ok: res.ok,
+        url: res.url,
+        redirected: res.redirected,
+        type: res.type,
+        headers: Object.fromEntries(res.headers.entries())
       })
       const data = await res.json()
       if (!res.ok) {
@@ -34,6 +43,7 @@ export default function SignIn({ onSignIn }) {
       }
       // success
       setLoading(false)
+      console.debug('[auth] success, user payload', data.user)
       onSignIn(data.user || { name: u })
     } catch (err) {
       console.error(err)

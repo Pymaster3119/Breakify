@@ -26,27 +26,34 @@ export default function App() {
   // try to auto-login from server session
   useEffect(() => {
     let mounted = true
-  fetch('https://breakify-backend.onrender.com/api/me', { credentials: 'include' })
-      .then(r => r.json())
+    console.debug('[bootstrap] fetch /api/me (with credentials)', { cookies: document.cookie })
+    fetch('https://breakify-backend.onrender.com/api/me', { credentials: 'include' })
+      .then(async r => {
+        console.debug('[bootstrap] /api/me response', { status: r.status, ok: r.ok, url: r.url, headers: Object.fromEntries(r.headers.entries()) })
+        return r.json()
+      })
       .then(async data => {
         if (!mounted) return
         if (data && data.user) {
           setUser(data.user)
+          console.debug('[bootstrap] user detected, fetching /api/settings next', { cookies: document.cookie })
           // try to load server-side settings for authenticated user
           try {
             const res = await fetch('https://breakify-backend.onrender.com/api/settings', { credentials: 'include' })
+            console.debug('[bootstrap] /api/settings response', { status: res.status, ok: res.ok, url: res.url, headers: Object.fromEntries(res.headers.entries()) })
             if (res.ok) {
               const jd = await res.json()
+              console.debug('[bootstrap] settings payload', jd)
               if (jd && jd.ok && jd.settings) {
                 const s = jd.settings
                 if (s.work_minutes) setWorkMinutes(Number(s.work_minutes))
                 if (s.break_minutes) setBreakMinutes(Number(s.break_minutes))
               }
             }
-          } catch (e) {}
+          } catch (e) { console.error('[bootstrap] settings fetch error', e) }
         }
       })
-      .catch(() => {})
+      .catch(err => { console.error('[bootstrap] /api/me error', err) })
     return () => { mounted = false }
   }, [])
   const [isOnBreak, setIsOnBreak] = useState(false)
@@ -265,13 +272,19 @@ export default function App() {
     } catch (e) {}
     // if user logged in, persist on server
     try {
-  if (user && user.name) {
-  fetch('https://breakify-backend.onrender.com/api/settings', {
+      if (user && user.name) {
+        console.debug('[settings] POST /api/settings', { w, b, user, cookies: document.cookie })
+        fetch('https://breakify-backend.onrender.com/api/settings', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ work_minutes: w, break_minutes: b })
-        }).catch(() => {})
+        })
+          .then(async res => {
+            const body = await res.text().catch(() => '(body read failed)')
+            console.debug('[settings] POST response', { status: res.status, ok: res.ok, url: res.url, headers: Object.fromEntries(res.headers.entries()), body })
+          })
+          .catch(err => console.error('[settings] POST error', err))
       }
     } catch (e) {}
     setShowSettings(false)
@@ -298,9 +311,14 @@ export default function App() {
     // load server-side settings after sign in
     (async () => {
       try {
-        console.debug('[handleSignIn] Fetching settings from server')
+        console.debug('[handleSignIn] Fetching settings from server', { cookies: document.cookie })
         const res = await fetch('https://breakify-backend.onrender.com/api/settings', { credentials: 'include' })
-        console.debug('[handleSignIn] Settings response status:', res.status)
+        console.debug('[handleSignIn] Settings response', {
+          status: res.status,
+          ok: res.ok,
+          url: res.url,
+          headers: Object.fromEntries(res.headers.entries())
+        })
         if (res.ok) {
           const jd = await res.json()
           console.debug('[handleSignIn] Settings data received:', jd)
@@ -310,7 +328,7 @@ export default function App() {
             if (s.break_minutes) setBreakMinutes(Number(s.break_minutes))
           }
         } else {
-          console.warn('[handleSignIn] Settings fetch failed with status', res.status)
+          console.warn('[handleSignIn] Settings fetch failed with status', res.status, 'cookies now', document.cookie)
         }
       } catch (e) { console.error('[handleSignIn] Settings fetch error:', e) }
     })()
