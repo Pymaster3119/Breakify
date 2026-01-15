@@ -1,7 +1,8 @@
 from flask import Flask, request, jsonify, send_from_directory, abort, session, make_response
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta
+import jwt
 from ultralytics import YOLO
 import torch
 import os
@@ -26,6 +27,10 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_DOMAIN=None,  # Let browser handle domain
 )
+
+JWT_SECRET = os.environ.get('JWT_SECRET') or (app.secret_key if isinstance(app.secret_key, str) else 'change-me')
+JWT_ALG = 'HS256'
+JWT_TTL_SECONDS = int(os.environ.get('JWT_TTL_SECONDS', '604800'))  # default 7 days
 
 # CORS configuration with explicit resource configuration
 CORS(app, 
@@ -162,6 +167,33 @@ def set_user_settings(username, work_minutes, break_minutes):
         raise
     finally:
         db.close()
+
+
+def issue_jwt(username):
+    now = datetime.utcnow()
+    payload = {
+        'sub': username,
+        'iat': now,
+        'exp': now + timedelta(seconds=JWT_TTL_SECONDS)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALG)
+
+
+def current_username():
+    # Prefer Bearer token if provided
+    auth_header = request.headers.get('Authorization', '') or ''
+    if auth_header.lower().startswith('bearer '):
+        token = auth_header.split(' ', 1)[1].strip()
+        if token:
+            try:
+                decoded = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALG])
+                return decoded.get('sub')
+            except jwt.ExpiredSignatureError:
+                return None
+            except jwt.InvalidTokenError:
+                return None
+    # Fallback to session cookie
+    return session.get('user')
 
 
 def get_user_stats(username, limit=20):
@@ -332,7 +364,11 @@ def api_register():
         create_user(username, password)
         session['user'] = username
         session.modified = True  # Ensure session is marked as modified
-        return jsonify({'ok': True, 'user': {'name': username}})
+        token = issue_jwt(username)
+        resp = make_response(jsonify({'ok': True, 'user': {'name': username}, 'token': token}))
+        resp.headers['Access-Control-Allow-Credentials'] = 'true'
+        resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
+        return resp
     except Exception as e:
         return jsonify({'error': 'failed to create user', 'detail': str(e)}), 500
 
@@ -340,7 +376,7 @@ def api_register():
 @app.route('/api/session', methods=['POST'])
 def api_session():
     # record a finished work session for the logged-in user
-    username = session.get('user')
+    username = current_username()
     if not username:
         return jsonify({'error': 'not authenticated'}), 401
     data = request.get_json() or {}
@@ -357,7 +393,7 @@ def api_session():
 
 @app.route('/api/stats')
 def api_stats():
-    username = session.get('user')
+    username = current_username()
     if not username:
         return jsonify({'error': 'not authenticated'}), 401
     stats = get_user_stats(username)
@@ -403,7 +439,8 @@ def api_login():
         return jsonify({'error': 'invalid credentials'}), 401
     session['user'] = username
     session.modified = True  # Ensure session is marked as modified
-    resp = make_response(jsonify({'ok': True, 'user': {'name': username}}))
+    token = issue_jwt(username)
+    resp = make_response(jsonify({'ok': True, 'user': {'name': username}, 'token': token}))
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
     resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
     return resp
@@ -411,7 +448,7 @@ def api_login():
 
 @app.route('/api/me')
 def api_me():
-    username = session.get('user')
+    username = current_username()
     if not username:
         resp = make_response(jsonify({'user': None}))
     else:
@@ -423,7 +460,7 @@ def api_me():
 
 @app.route('/api/settings', methods=['GET', 'POST'])
 def api_settings():
-    username = session.get('user')
+    username = current_username()
     if not username:
         resp = make_response(jsonify({'error': 'not authenticated'}), 401)
         resp.headers['Access-Control-Allow-Credentials'] = 'true'

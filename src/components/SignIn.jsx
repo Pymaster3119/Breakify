@@ -59,8 +59,8 @@ export default function SignIn({ onSignIn }) {
       setLoading(false)
       logCookie('after login immediate')
       setTimeout(() => logCookie('after login +500ms'), 500)
-      console.debug('[auth] success, user payload', data.user)
-      onSignIn(data.user || { name: u })
+      console.debug('[auth] success, user payload', data.user, 'token present', !!data.token)
+      onSignIn({ ...(data.user || { name: u }), token: data.token })
     } catch (err) {
       console.error(err)
       setMsg('Failed to contact server')
