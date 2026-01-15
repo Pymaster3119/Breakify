@@ -31,13 +31,13 @@ export default function App() {
       console.debug('[cookie]', label, { cookie: document.cookie, origin: window.location.origin, at: new Date().toISOString() })
     } catch (e) {}
   }
-  const authHeaders = () => (authToken ? { Authorization: `Bearer ${authToken}` } : {})
+  const getAuthHeaders = () => (authToken ? { Authorization: `Bearer ${authToken}` } : {})
   // try to auto-login from server session
   useEffect(() => {
     let mounted = true
     console.debug('[bootstrap] fetch /api/me (with credentials)')
     logCookie('bootstrap before /api/me')
-    fetch('https://breakify-backend.onrender.com/api/me', { credentials: 'include', headers: { ...authHeaders() } })
+    fetch('https://breakify-backend.onrender.com/api/me', { credentials: 'include', headers: { ...getAuthHeaders() } })
       .then(async r => {
         console.debug('[bootstrap] /api/me response', { status: r.status, ok: r.ok, url: r.url, headers: Object.fromEntries(r.headers.entries()) })
         logCookie('bootstrap after /api/me response')
@@ -51,7 +51,7 @@ export default function App() {
           logCookie('bootstrap before /api/settings')
           // try to load server-side settings for authenticated user
           try {
-            const res = await fetch('https://breakify-backend.onrender.com/api/settings', { credentials: 'include', headers: { ...authHeaders() } })
+            const res = await fetch('https://breakify-backend.onrender.com/api/settings', { credentials: 'include', headers: { ...getAuthHeaders() } })
               console.debug('[bootstrap] /api/settings response', { status: res.status, ok: res.ok, url: res.url, headers: Object.fromEntries(res.headers.entries()) })
             logCookie('bootstrap after /api/settings response')
             if (res.ok) {
@@ -237,7 +237,7 @@ export default function App() {
           fetch('https://breakify-backend.onrender.com/api/session', {
             method: 'POST',
             credentials: 'include',
-            headers: { 'Content-Type': 'application/json', ...authHeaders() },
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
             body: JSON.stringify({ duration_seconds: START_SECONDS, phone_count: phoneCount })
           }).catch(() => {})
         }
@@ -291,7 +291,7 @@ export default function App() {
         fetch('https://breakify-backend.onrender.com/api/settings', {
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json', ...authHeaders() },
+          headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
           body: JSON.stringify({ work_minutes: w, break_minutes: b })
         })
           .then(async res => {
@@ -318,9 +318,11 @@ export default function App() {
     console.debug('[handleSignIn] User object received:', userObj)
     setUser(userObj)
     console.debug('[handleSignIn] User state updated to:', userObj)
+    let token = authToken
     if (userObj?.token) {
-      setAuthToken(userObj.token)
-      try { localStorage.setItem('bf_jwt', userObj.token) } catch (e) {}
+      token = userObj.token
+      setAuthToken(token)
+      try { localStorage.setItem('bf_jwt', token) } catch (e) {}
     }
     logCookie('handleSignIn immediately after state set')
     setTimeout(() => logCookie('handleSignIn +500ms'), 500)
@@ -334,7 +336,8 @@ export default function App() {
       try {
         console.debug('[handleSignIn] Fetching settings from server')
         logCookie('handleSignIn before /api/settings')
-        const res = await fetch('https://breakify-backend.onrender.com/api/settings', { credentials: 'include', headers: { ...authHeaders() } })
+        const headers = token ? { Authorization: `Bearer ${token}` } : {}
+        const res = await fetch('https://breakify-backend.onrender.com/api/settings', { credentials: 'include', headers })
         console.debug('[handleSignIn] Settings response', {
           status: res.status,
           ok: res.ok,
