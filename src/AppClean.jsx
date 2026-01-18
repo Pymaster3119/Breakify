@@ -263,13 +263,24 @@ export default function App() {
             distractedStartRef.current = 0
           }
           const totalDistracted = distractedSecondsRef.current || 0
+          const unscheduledBreak = usedBreakSecondsRef.current || 0
+          const focusedSeconds = Math.max(0, START_SECONDS - totalDistracted - unscheduledBreak)
           const unfocused = (totalDistracted / START_SECONDS) > 0.10
+          // send both duration and focused_seconds to backend; server can decide how to persist
           fetch('https://breakify-backend.onrender.com/api/session', {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ duration_seconds: START_SECONDS, phone_count: phoneCount, distracted_seconds: totalDistracted, unfocused })
+            body: JSON.stringify({ duration_seconds: START_SECONDS, phone_count: phoneCount, distracted_seconds: totalDistracted, unfocused, focused_seconds: focusedSeconds })
           }).catch(() => {})
+          // also persist locally so guests see accumulated focused time
+          try {
+            const prev = Number(localStorage.getItem('bf_total_focused_seconds') || 0)
+            localStorage.setItem('bf_total_focused_seconds', String(prev + focusedSeconds))
+          } catch (e) {}
+          // reset per-session counters
+          distractedSecondsRef.current = 0
+          usedBreakSecondsRef.current = 0
         }
       } catch (e) {}
 

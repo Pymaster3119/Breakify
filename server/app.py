@@ -8,7 +8,7 @@ import torch
 import os
 
 # SQLAlchemy / PostgreSQL
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, func
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, func, Boolean
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -64,6 +64,9 @@ class WorkSession(Base):
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     duration_seconds = Column(Integer, nullable=False)
     phone_count = Column(Integer, nullable=False, default=0)
+    distracted_seconds = Column(Integer, nullable=True, default=0)
+    focused_seconds = Column(Integer, nullable=True, default=0)
+    unfocused = Column(Boolean, nullable=True, default=False)
     created_at = Column(DateTime, nullable=False)
     user = relationship('User', back_populates='sessions')
 
@@ -115,14 +118,22 @@ def create_user(username, password):
         db.close()
 
 
-def record_session_for_user(username, duration_seconds, phone_count=0):
+def record_session_for_user(username, duration_seconds, phone_count=0, distracted_seconds=0, focused_seconds=0, unfocused=False):
     user = find_user(username)
     if not user:
         raise ValueError('no such user')
     db = SessionLocal()
     try:
         now = datetime.utcnow()
-        s = WorkSession(user_id=user['id'], duration_seconds=int(duration_seconds), phone_count=int(phone_count), created_at=now)
+        s = WorkSession(
+            user_id=user['id'],
+            duration_seconds=int(duration_seconds),
+            phone_count=int(phone_count),
+            distracted_seconds=int(distracted_seconds or 0),
+            focused_seconds=int(focused_seconds or 0),
+            unfocused=bool(unfocused),
+            created_at=now
+        )
         db.add(s)
         db.commit()
     except SQLAlchemyError:
@@ -202,9 +213,10 @@ def get_user_stats(username, limit=20):
         return None
     db = SessionLocal()
     try:
-        total = db.query(func.coalesce(func.sum(WorkSession.duration_seconds), 0)).filter(WorkSession.user_id == user['id']).scalar() or 0
+        # Use focused_seconds as the authoritative total for "focused" leaderboard/statistics
+        total = db.query(func.coalesce(func.sum(WorkSession.focused_seconds), 0)).filter(WorkSession.user_id == user['id']).scalar() or 0
         rows = db.query(WorkSession).filter(WorkSession.user_id == user['id']).order_by(WorkSession.id.desc()).limit(limit).all()
-        recent = [{'id': r.id, 'duration_seconds': r.duration_seconds, 'phone_count': r.phone_count, 'created_at': r.created_at.isoformat()} for r in rows]
+        recent = [{'id': r.id, 'duration_seconds': r.duration_seconds, 'phone_count': r.phone_count, 'distracted_seconds': getattr(r, 'distracted_seconds', 0) or 0, 'focused_seconds': getattr(r, 'focused_seconds', 0) or 0, 'unfocused': bool(getattr(r, 'unfocused', False)), 'created_at': r.created_at.isoformat()} for r in rows]
         return {'total_seconds': int(total), 'recent_sessions': recent}
     finally:
         db.close()
@@ -382,10 +394,22 @@ def api_session():
     data = request.get_json() or {}
     duration = int(data.get('duration_seconds') or 0)
     phone_count = int(data.get('phone_count') or 0)
+    # optional extended metrics
+    try:
+        distracted_seconds = int(data.get('distracted_seconds') or 0)
+    except Exception:
+        distracted_seconds = 0
+    try:
+        focused_seconds = int(data.get('focused_seconds') or 0)
+    except Exception:
+        focused_seconds = 0
+    # accept boolean-ish unfocused values
+    unfocused_raw = data.get('unfocused')
+    unfocused = (unfocused_raw is True) or (str(unfocused_raw).lower() in ('1', 'true', 'yes'))
     if duration <= 0:
         return jsonify({'error': 'invalid duration'}), 400
     try:
-        record_session_for_user(username, duration, phone_count)
+        record_session_for_user(username, duration, phone_count, distracted_seconds=distracted_seconds, focused_seconds=focused_seconds, unfocused=unfocused)
         return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'error': 'failed to record session', 'detail': str(e)}), 500
@@ -407,15 +431,16 @@ def api_leaderboard():
     # Public endpoint: return users ordered by total worked seconds (desc)
     db = SessionLocal()
     try:
+        # Rank users by total focused seconds (focused_seconds)
         q = (
             db.query(
                 User.username,
-                func.coalesce(func.sum(WorkSession.duration_seconds), 0).label('total_seconds'),
+                func.coalesce(func.sum(WorkSession.focused_seconds), 0).label('total_seconds'),
                 func.count(WorkSession.id).label('session_count'),
             )
             .outerjoin(WorkSession, User.id == WorkSession.user_id)
             .group_by(User.id)
-            .order_by(func.coalesce(func.sum(WorkSession.duration_seconds), 0).desc())
+            .order_by(func.coalesce(func.sum(WorkSession.focused_seconds), 0).desc())
             .limit(100)
         )
         rows = q.all()
