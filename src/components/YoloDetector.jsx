@@ -9,16 +9,22 @@ const MODEL_URL = import.meta.env.VITE_YOLO12N_MODEL_URL || '/models/yolo12n/mod
 const INPUT_SIZE = 640
 const SCORE_THRESHOLD = 0.35
 const NMS_IOU_THRESHOLD = 0.45
-const MAX_DETECTIONS = 20
+const MAX_DETECTIONS = 10
+// Limit how often we run inference; default 1000ms for low resource usage
+const RATE_LIMIT_MS = 1000
+// Choose backend via env (webgl|wasm|cpu). Default to webgl low-power.
+const TF_BACKEND = (import.meta.env.VITE_TF_BACKEND || 'webgl').toLowerCase()
 
-export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPhoneSeen }) {
+export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPhoneSeen, onDistracted }) {
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState(null)
   const overlayRef = useRef(null)
   const phonePrevRef = useRef(false)
   const rafRef = useRef(null)
+  const timerRef = useRef(null)
   const processingRef = useRef(false)
   const modelRef = useRef(null)
+  const lastDetectTsRef = useRef(0)
   // alarm refs
   const alarmActiveRef = useRef(false)
   const audioCtxRef = useRef(null)
@@ -36,7 +42,22 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
         setError(null)
         await tf.ready()
         if (!tf.getBackend()) {
-          await tf.setBackend('webgl')
+          // Configure low-power WebGL context when using GPU
+          if (TF_BACKEND === 'webgl') {
+            try {
+              tf.env().set('WEBGL_CONTEXT_ATTRIBUTES', {
+                powerPreference: 'low-power',
+                alpha: false,
+                antialias: false,
+                preserveDrawingBuffer: false,
+                desynchronized: true
+              })
+              // Prefer fp16 textures and packing to reduce memory bandwidth
+              tf.env().set('WEBGL_FORCE_F16_TEXTURES', true)
+              tf.env().set('WEBGL_PACK', true)
+            } catch {}
+          }
+          await tf.setBackend(TF_BACKEND)
           await tf.ready()
         }
         const model = await tf.loadGraphModel(MODEL_URL)
@@ -63,6 +84,8 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
       cancelled = true
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       rafRef.current = null
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = null
       stopAlarm()
     }
   }, [enabled])
@@ -78,28 +101,35 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
     if (!enabled) return
     let stopped = false
 
-    const runLoop = async () => {
+    const scheduleNext = () => {
       if (stopped) return
-      await detectOnce()
-      if (!stopped) rafRef.current = requestAnimationFrame(runLoop)
+      timerRef.current = setTimeout(async () => {
+        if (stopped) return
+        await detectOnce()
+        scheduleNext()
+      }, RATE_LIMIT_MS)
     }
 
-    rafRef.current = requestAnimationFrame(runLoop)
+    scheduleNext()
 
     return () => {
       stopped = true
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = null
     }
   }, [enabled])
 
   const detectOnce = async () => {
     if (!enabled) return
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    if (now - (lastDetectTsRef.current || 0) < RATE_LIMIT_MS) return
     if (processingRef.current) return
+    console.log('Running detection pass at ' + now);
     const model = modelRef.current
     const v = videoRef?.current
     if (!model || !v || v.readyState < 2) return
     processingRef.current = true
+    lastDetectTsRef.current = now
 
     try {
       const dets = await runModel(model, v)
@@ -114,7 +144,8 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
         const score = Number(d.score || 0)
         return !(id === 0 && score > 0.5)
       })
-      if (phonePresent || humanNotPresent) startAlarm()
+      const distracted = !!(phonePresent || humanNotPresent)
+      if (distracted) startAlarm()
       else stopAlarm()
 
       // rising-edge phone detection: notify parent once per pick-up
@@ -124,6 +155,11 @@ export default function YoloDetector({ videoRef, enabled, onPersonPresent, onPho
           if ((phonePresent || humanNotPresent) && !prev) onPhoneSeen()
           phonePrevRef.current = !!phonePresent
         }
+      } catch (e) {}
+
+      // report distracted state (every detection pass)
+      try {
+        if (typeof onDistracted === 'function') onDistracted(distracted)
       } catch (e) {}
 
       // Person detection (class 0)

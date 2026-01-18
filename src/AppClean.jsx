@@ -22,6 +22,10 @@ export default function App() {
 
   const START_SECONDS = workMinutes * 60
   const [phoneCount, setPhoneCount] = useState(0)
+  // distraction tracking (seconds)
+  const distractedSecondsRef = useRef(0)
+  const distractedActiveRef = useRef(false)
+  const distractedStartRef = useRef(0)
   const [user, setUser] = useState(null)
   const [authToken, setAuthToken] = useState(() => {
     try { return localStorage.getItem('bf_jwt') || '' } catch (e) { return '' }
@@ -169,6 +173,22 @@ export default function App() {
     }
   }
 
+  // callback from detector reporting whether the current frame is 'distracted'
+  const handleDistracted = isDistracted => {
+    try {
+      if (isDistracted && !distractedActiveRef.current) {
+        distractedActiveRef.current = true
+        distractedStartRef.current = Date.now()
+      } else if (!isDistracted && distractedActiveRef.current) {
+        const now = Date.now()
+        const elapsed = Math.max(0, Math.floor((now - (distractedStartRef.current || now)) / 1000))
+        distractedSecondsRef.current = (distractedSecondsRef.current || 0) + elapsed
+        distractedActiveRef.current = false
+        distractedStartRef.current = 0
+      }
+    } catch (e) { console.warn('handleDistracted error', e) }
+  }
+
   // audio chime when timer reaches zero
   const audioCtxRef = useRef(null)
   const playChime = () => {
@@ -234,11 +254,21 @@ export default function App() {
       // report completed work session to backend (for registered users)
       try {
         if (user && !user.isGuest) {
+          // finalize any active distracted period before reporting
+          if (distractedActiveRef.current) {
+            const now = Date.now()
+            const elapsed = Math.max(0, Math.floor((now - (distractedStartRef.current || now)) / 1000))
+            distractedSecondsRef.current = (distractedSecondsRef.current || 0) + elapsed
+            distractedActiveRef.current = false
+            distractedStartRef.current = 0
+          }
+          const totalDistracted = distractedSecondsRef.current || 0
+          const unfocused = (totalDistracted / START_SECONDS) > 0.10
           fetch('https://breakify-backend.onrender.com/api/session', {
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
-            body: JSON.stringify({ duration_seconds: START_SECONDS, phone_count: phoneCount })
+            body: JSON.stringify({ duration_seconds: START_SECONDS, phone_count: phoneCount, distracted_seconds: totalDistracted, unfocused })
           }).catch(() => {})
         }
       } catch (e) {}
@@ -408,7 +438,7 @@ export default function App() {
           <section className="preview">
             <div>
               <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={true} />
-              <YoloDetector videoRef={videoRef} enabled={!isOnBreak} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} />
+              <YoloDetector videoRef={videoRef} enabled={!isOnBreak} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} onDistracted={handleDistracted} />
             </div>
 
             <div className="timer-overlay">
@@ -419,7 +449,21 @@ export default function App() {
                 <audio ref={audioRef} src="/chime.mp3" preload="auto" />
 
                 {timerSeconds === 0 && timerStartedRef.current ? (
-                  <div className="session-summary"> This was a <strong style={{fontSize:18}}>{phoneCount > 0 ? 'unfocused' : 'highly focused'}</strong> session </div>
+                  (() => {
+                    // finalize any active distracted period
+                    if (distractedActiveRef.current) {
+                      const now = Date.now()
+                      const elapsed = Math.max(0, Math.floor((now - (distractedStartRef.current || now)) / 1000))
+                      distractedSecondsRef.current = (distractedSecondsRef.current || 0) + elapsed
+                      distractedActiveRef.current = false
+                      distractedStartRef.current = 0
+                    }
+                    const totalDistracted = distractedSecondsRef.current || 0
+                    const unfocused = (totalDistracted / START_SECONDS) > 0.10
+                    return (
+                      <div className="session-summary"> This was a <strong style={{fontSize:18}}>{unfocused ? 'unfocused' : 'highly focused'}</strong> session </div>
+                    )
+                  })()
                 ) : null}
 
                 {/* allow taking an unscheduled break during an active work session */}
