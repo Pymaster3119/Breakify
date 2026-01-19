@@ -40,7 +40,7 @@ CORS(app,
      expose_headers=['Set-Cookie'],
      methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'])
 
-PROVIDED_INTERNAL_DB_URL = 'postgresql://neondb_owner:npg_4xoZlbS0UNIC@ep-damp-base-adoyetgg-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require'
+PROVIDED_INTERNAL_DB_URL = 'postgresql://neondb_owner:npg_0h8rlLmkMeTy@ep-damp-wave-aenvz5j9-pooler.c-2.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require'
 DATABASE_URL = os.environ.get('DATABASE_URL', PROVIDED_INTERNAL_DB_URL)
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
