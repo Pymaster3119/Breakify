@@ -19,6 +19,14 @@ export default function App() {
     const v = parseInt(localStorage.getItem('bf_break_minutes'), 10)
     return Number.isFinite(v) && v > 0 ? v : 10
   })
+  const [manualMode, setManualMode] = useState(() => {
+    try {
+      const v = localStorage.getItem('bf_manual_mode')
+      return v === 'true'
+    } catch (e) {
+      return false
+    }
+  })
 
   const START_SECONDS = workMinutes * 60
   const [phoneCount, setPhoneCount] = useState(0)
@@ -165,12 +173,33 @@ export default function App() {
   }
 
   // callback from detector about person presence
-  // Start timer only once, when the first person is detected.
+  // Start timer only once, when the first person is detected (if not in manual mode).
   const handlePersonPresent = present => {
-    if (present && !timerStartedRef.current) {
+    if (present && !timerStartedRef.current && !manualMode) {
       timerStartedRef.current = true
       setTimerSeconds(START_SECONDS)
     }
+  }
+
+  // manual timer controls
+  const startTimer = () => {
+    if (!timerStartedRef.current) {
+      timerStartedRef.current = true
+      setTimerSeconds(START_SECONDS)
+    }
+  }
+
+  const stopTimer = () => {
+    timerStartedRef.current = false
+    setTimerSeconds(0)
+    setIsOnBreak(false)
+    setBreakSeconds(0)
+    setPhoneCount(0)
+    // reset tracking
+    distractedSecondsRef.current = 0
+    distractedActiveRef.current = false
+    distractedStartRef.current = 0
+    usedBreakSecondsRef.current = 0
   }
 
   // callback from detector reporting whether the current frame is 'distracted'
@@ -317,12 +346,14 @@ export default function App() {
   const [showLeaderboard, setShowLeaderboard] = useState(false)
   
   // handle settings save
-  const handleSaveSettings = ({ workMinutes: w, breakMinutes: b }) => {
+  const handleSaveSettings = ({ workMinutes: w, breakMinutes: b, manualMode: m }) => {
     setWorkMinutes(w)
     setBreakMinutes(b)
+    setManualMode(m)
     try {
       localStorage.setItem('bf_work_minutes', String(w))
       localStorage.setItem('bf_break_minutes', String(b))
+      localStorage.setItem('bf_manual_mode', String(m))
     } catch (e) {}
     // if user logged in, persist on server
     try {
@@ -448,8 +479,8 @@ export default function App() {
         <main className="main">
           <section className="preview">
             <div>
-              <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={true} />
-              <YoloDetector videoRef={videoRef} enabled={!isOnBreak} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} onDistracted={handleDistracted} />
+              <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={!manualMode && !isOnBreak} />
+              <YoloDetector videoRef={videoRef} enabled={!isOnBreak && !manualMode} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} onDistracted={handleDistracted} />
             </div>
 
             <div className="timer-overlay">
@@ -475,6 +506,19 @@ export default function App() {
                       <div className="session-summary"> This was a <strong style={{fontSize:18}}>{unfocused ? 'unfocused' : 'highly focused'}</strong> session </div>
                     )
                   })()
+                ) : null}
+
+                {/* manual mode controls */}
+                {manualMode && !isOnBreak && !timerStartedRef.current ? (
+                  <div style={{marginTop:8}}>
+                    <button className="btn primary" onClick={startTimer}>Start Timer</button>
+                  </div>
+                ) : null}
+
+                {manualMode && timerStartedRef.current && timerSeconds > 0 ? (
+                  <div style={{marginTop:8}}>
+                    <button className="btn ghost" onClick={stopTimer}>Stop Timer</button>
+                  </div>
                 ) : null}
 
                 {/* allow taking an unscheduled break during an active work session */}
@@ -572,7 +616,7 @@ export default function App() {
 
       {showSettings && (
         <div className="bf-modal">
-          <Settings workMinutes={workMinutes} breakMinutes={breakMinutes} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />
+          <Settings workMinutes={workMinutes} breakMinutes={breakMinutes} manualMode={manualMode} onSave={handleSaveSettings} onClose={() => setShowSettings(false)} />
         </div>
       )}
     </div>

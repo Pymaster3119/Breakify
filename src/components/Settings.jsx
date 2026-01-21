@@ -1,13 +1,14 @@
 import React, { useState } from 'react'
 
-export default function Settings({ workMinutes, breakMinutes, onSave, onClose }) {
+export default function Settings({ workMinutes, breakMinutes, manualMode, onSave, onClose }) {
   const [work, setWork] = useState(String(workMinutes ?? 30))
   const [brk, setBrk] = useState(String(breakMinutes ?? 10))
+  const [manual, setManual] = useState(manualMode ?? false)
 
   const save = () => {
     const w = Math.max(1, parseInt(work || '0', 10) || 1)
     const b = Math.max(1, parseInt(brk || '0', 10) || 1)
-    onSave({ workMinutes: w, breakMinutes: b })
+    onSave({ workMinutes: w, breakMinutes: b, manualMode: manual })
   }
 
   return (
@@ -23,6 +24,11 @@ export default function Settings({ workMinutes, breakMinutes, onSave, onClose })
         <label>
           Break length (minutes)
           <input type="number" min="1" value={brk} onChange={e => setBrk(e.target.value)} style={{width:120,marginLeft:12}} />
+        </label>
+
+        <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
+          <input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} />
+          <span>Manual mode (start/stop timer manually)</span>
         </label>
 
         <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:8}}>
