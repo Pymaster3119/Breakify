@@ -95,6 +95,11 @@ export default function App() {
   // store the break budget value when a break starts so we can compute elapsed if user ends early
   const breakBudgetAtStartRef = useRef(0)
 
+  // cleanup on unmount
+  useEffect(() => {
+    return () => stopAlarmLoop()
+  }, [])
+
   // countdown effect
   useEffect(() => {
     let t = null
@@ -122,6 +127,8 @@ export default function App() {
         setPhoneCount(0) // reset phone detections after each break
         // reset used break seconds for next session
         usedBreakSecondsRef.current = 0
+        // start alarm to prompt starting next session
+        startAlarmLoop()
       } else {
         // unscheduled break ended because user consumed remaining break budget or ended early via UI
         // compute elapsed break seconds from this break and accumulate
@@ -150,6 +157,8 @@ export default function App() {
     breakBudgetAtStartRef.current = remainingBudget
     setBreakSeconds(remainingBudget)
     setIsOnBreak(true)
+    // play level up sound when entering break
+    playLevelUp()
   }
 
   // End an unscheduled break early (before the scheduled session end). Accumulate used break seconds.
@@ -178,6 +187,7 @@ export default function App() {
     if (present && !timerStartedRef.current && !manualMode) {
       timerStartedRef.current = true
       setTimerSeconds(START_SECONDS)
+      stopAlarmLoop()
     }
   }
 
@@ -186,6 +196,7 @@ export default function App() {
     if (!timerStartedRef.current) {
       timerStartedRef.current = true
       setTimerSeconds(START_SECONDS)
+      stopAlarmLoop()
     }
   }
 
@@ -249,6 +260,82 @@ export default function App() {
       }, 1500)
     } catch (e) {
       console.warn('chime failed', e)
+    }
+  }
+
+  // level up sound when break starts
+  const playLevelUp = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext
+      if (!AudioCtx) return
+      const ac = audioCtxRef.current || new AudioCtx()
+      audioCtxRef.current = ac
+      if (ac.state === 'suspended' && typeof ac.resume === 'function') ac.resume().catch(() => {})
+
+      const now = ac.currentTime
+      const o = ac.createOscillator()
+      const g = ac.createGain()
+      o.type = 'square'
+      // ascending tones
+      o.frequency.setValueAtTime(523, now) // C5
+      o.frequency.setValueAtTime(659, now + 0.1) // E5
+      o.frequency.setValueAtTime(784, now + 0.2) // G5
+      g.gain.setValueAtTime(0.0001, now)
+      g.gain.exponentialRampToValueAtTime(0.15, now + 0.01)
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.4)
+      o.connect(g)
+      g.connect(ac.destination)
+      o.start(now)
+      o.stop(now + 0.5)
+      setTimeout(() => {
+        try { g.disconnect(); o.disconnect() } catch (e) {}
+      }, 600)
+    } catch (e) {
+      console.warn('level up sound failed', e)
+    }
+  }
+
+  // alarm sound when waiting for next session
+  const alarmIntervalRef = useRef(null)
+  const playAlarm = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext
+      if (!AudioCtx) return
+      const ac = audioCtxRef.current || new AudioCtx()
+      audioCtxRef.current = ac
+      if (ac.state === 'suspended' && typeof ac.resume === 'function') ac.resume().catch(() => {})
+
+      const now = ac.currentTime
+      const o = ac.createOscillator()
+      const g = ac.createGain()
+      o.type = 'sine'
+      o.frequency.setValueAtTime(800, now)
+      o.frequency.setValueAtTime(600, now + 0.15)
+      g.gain.setValueAtTime(0.0001, now)
+      g.gain.exponentialRampToValueAtTime(0.1, now + 0.01)
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.3)
+      o.connect(g)
+      g.connect(ac.destination)
+      o.start(now)
+      o.stop(now + 0.35)
+      setTimeout(() => {
+        try { g.disconnect(); o.disconnect() } catch (e) {}
+      }, 400)
+    } catch (e) {
+      console.warn('alarm sound failed', e)
+    }
+  }
+
+  const startAlarmLoop = () => {
+    if (alarmIntervalRef.current) return
+    playAlarm()
+    alarmIntervalRef.current = setInterval(playAlarm, 3000)
+  }
+
+  const stopAlarmLoop = () => {
+    if (alarmIntervalRef.current) {
+      clearInterval(alarmIntervalRef.current)
+      alarmIntervalRef.current = null
     }
   }
 
@@ -319,6 +406,8 @@ export default function App() {
   const scheduledRemaining = Math.max(0, BREAK_TOTAL - (usedBreakSecondsRef.current || 0))
   setBreakSeconds(scheduledRemaining)
   breakBudgetAtStartRef.current = scheduledRemaining
+  // play level up sound when entering break
+  playLevelUp()
       // prepare notes for new break: clear achievement, load last session's goals into separate box
       setAchievement('')
       try {
@@ -512,12 +601,6 @@ export default function App() {
                 {manualMode && !isOnBreak && !timerStartedRef.current ? (
                   <div style={{marginTop:8}}>
                     <button className="btn primary" onClick={startTimer}>Start Timer</button>
-                  </div>
-                ) : null}
-
-                {manualMode && timerStartedRef.current && timerSeconds > 0 ? (
-                  <div style={{marginTop:8}}>
-                    <button className="btn ghost" onClick={stopTimer}>Stop Timer</button>
                   </div>
                 ) : null}
 

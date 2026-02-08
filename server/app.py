@@ -52,6 +52,7 @@ class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, nullable=False)
+    email = Column(String, nullable=True)
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime, nullable=False)
     sessions = relationship('WorkSession', back_populates='user', cascade='all, delete-orphan')
@@ -98,16 +99,16 @@ def find_user(username):
         u = db.query(User).filter(User.username == username).first()
         if not u:
             return None
-        return {'id': u.id, 'username': u.username, 'password_hash': u.password_hash, 'created_at': u.created_at}
+        return {'id': u.id, 'username': u.username, 'email': u.email, 'password_hash': u.password_hash, 'created_at': u.created_at}
     finally:
         db.close()
 
-def create_user(username, password):
+def create_user(username, password, email=None):
     db = SessionLocal()
     try:
         pw_hash = generate_password_hash(password)
         now = datetime.utcnow()
-        u = User(username=username, password_hash=pw_hash, created_at=now)
+        u = User(username=username, password_hash=pw_hash, email=email, created_at=now)
         db.add(u)
         db.commit()
         return True
@@ -366,6 +367,7 @@ def api_register():
     data = request.get_json() or {}
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
+    email = (data.get('email') or '').strip()
     if not username or not password:
         return jsonify({'error': 'username and password required'}), 400
     if len(username) < 3 or len(password) < 6:
@@ -373,7 +375,7 @@ def api_register():
     if find_user(username):
         return jsonify({'error': 'user exists'}), 400
     try:
-        create_user(username, password)
+        create_user(username, password, email)
         session['user'] = username
         session.modified = True  # Ensure session is marked as modified
         token = issue_jwt(username)

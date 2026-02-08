@@ -5,6 +5,7 @@ const API_BASE = 'https://breakify-backend.onrender.com'
 export default function SignIn({ onSignIn }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  const [email, setEmail] = useState('')
   const [isRegistering, setIsRegistering] = useState(false)
   const [msg, setMsg] = useState('')
   const [loading, setLoading] = useState(false)
@@ -20,8 +21,10 @@ export default function SignIn({ onSignIn }) {
     setMsg('')
     const u = username.trim()
     const p = password
+    const em = email.trim()
     if (!u) return setMsg('Please enter a username')
     if (!p) return setMsg('Please enter a password')
+    if (isRegistering && !em) return setMsg('Please enter an email')
 
     const endpoint = isRegistering ? '/api/register' : '/api/login'
     console.debug('[auth] submitting', { endpoint, url: API_BASE + endpoint, username: u, withCredentials: true, cookies: document.cookie })
@@ -32,7 +35,7 @@ export default function SignIn({ onSignIn }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ username: u, password: p })
+        body: JSON.stringify({ username: u, password: p, ...(isRegistering && { email: em }) })
       })
       const allHeaders = Object.fromEntries(res.headers.entries())
       console.debug('[auth] response', {
@@ -86,6 +89,13 @@ export default function SignIn({ onSignIn }) {
           <label className="label">Password</label>
           <input className="input" value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder="Password" />
         </div>
+
+        {isRegistering && (
+        <div className="form-row">
+            <label className="label">Email</label>
+            <input className="input" value={email} onChange={e => setEmail(e.target.value)} type="email" placeholder="Email" />
+        </div>
+        )}
 
         {msg && <div style={{color: 'var(--danger)', marginBottom:12}}>{msg}</div>}
 
