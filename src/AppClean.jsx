@@ -4,6 +4,7 @@ import YoloDetector from './components/YoloDetector'
 import SignIn from './components/SignIn'
 import Leaderboard from './components/Leaderboard'
 import Settings from './components/Settings'
+import { time } from '@tensorflow/tfjs'
 
 export default function App() {
   const videoRef = useRef(null)
@@ -182,10 +183,13 @@ export default function App() {
   }
 
   // callback from detector about person presence
-  // No auto-start - user must manually click start button
+  // Start timer only once, when the first person is detected (if not in manual mode).
   const handlePersonPresent = present => {
-    // This callback is kept for potential future features
-    // but no longer auto-starts the timer
+    // if (present && !timerStartedRef.current && !manualMode) {
+    //   timerStartedRef.current = true
+    //   setTimerSeconds(START_SECONDS)
+    //   stopAlarmLoop()
+    // }
   }
 
   // manual timer controls
@@ -456,14 +460,12 @@ export default function App() {
             const body = await res.text().catch(() => '(body read failed)')
             console.debug('[settings] POST response', { status: res.status, ok: res.ok, url: res.url, headers: Object.fromEntries(res.headers.entries()), body })
             logCookie('after POST /api/settings response')
+            setTimeout(() => { try { window.location.reload() } catch (e) {} }, 50)
           })
           .catch(err => console.error('[settings] POST error', err))
       }
     } catch (e) {}
     setShowSettings(false)
-    // reload page so new settings (work/break/manual) take effect immediately
-    // use a small timeout to allow modal to close cleanly
-    setTimeout(() => { try { window.location.reload() } catch (e) {} }, 50)
   }
   // sync showLeaderboard with history (/leaderboard path)
   useEffect(() => {
@@ -568,8 +570,8 @@ export default function App() {
         <main className="main">
           <section className="preview">
             <div>
-              <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={!isOnBreak} />
-              <YoloDetector videoRef={videoRef} enabled={timerStartedRef.current && !isOnBreak} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} onDistracted={handleDistracted} />
+              <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={!manualMode && !isOnBreak} />
+              <YoloDetector videoRef={videoRef} enabled={!isOnBreak && !manualMode} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} onDistracted={handleDistracted} />
             </div>
 
             <div className="timer-overlay">
