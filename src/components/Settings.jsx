@@ -28,7 +28,7 @@ export default function Settings({ workMinutes, breakMinutes, manualMode, onSave
 
         <label style={{display:'flex',alignItems:'center',gap:8,cursor:'pointer'}}>
           <input type="checkbox" checked={manual} onChange={e => setManual(e.target.checked)} />
-          <span>Manual mode (start/stop timer manually)</span>
+          <span>Manual mode (AI focus tracking disabled)</span>
         </label>
 
         <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:8}}>

@@ -182,13 +182,10 @@ export default function App() {
   }
 
   // callback from detector about person presence
-  // Start timer only once, when the first person is detected (if not in manual mode).
+  // No auto-start - user must manually click start button
   const handlePersonPresent = present => {
-    if (present && !timerStartedRef.current && !manualMode) {
-      timerStartedRef.current = true
-      setTimerSeconds(START_SECONDS)
-      stopAlarmLoop()
-    }
+    // This callback is kept for potential future features
+    // but no longer auto-starts the timer
   }
 
   // manual timer controls
@@ -464,6 +461,9 @@ export default function App() {
       }
     } catch (e) {}
     setShowSettings(false)
+    // reload page so new settings (work/break/manual) take effect immediately
+    // use a small timeout to allow modal to close cleanly
+    setTimeout(() => { try { window.location.reload() } catch (e) {} }, 50)
   }
   // sync showLeaderboard with history (/leaderboard path)
   useEffect(() => {
@@ -568,8 +568,8 @@ export default function App() {
         <main className="main">
           <section className="preview">
             <div>
-              <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={!manualMode && !isOnBreak} />
-              <YoloDetector videoRef={videoRef} enabled={!isOnBreak && !manualMode} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} onDistracted={handleDistracted} />
+              <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={!isOnBreak} />
+              <YoloDetector videoRef={videoRef} enabled={timerStartedRef.current && !isOnBreak} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} onDistracted={handleDistracted} />
             </div>
 
             <div className="timer-overlay">
@@ -597,8 +597,8 @@ export default function App() {
                   })()
                 ) : null}
 
-                {/* manual mode controls */}
-                {manualMode && !isOnBreak && !timerStartedRef.current ? (
+                {/* manual mode controls - now available even with AI tracking on */}
+                {!isOnBreak && !timerStartedRef.current ? (
                   <div style={{marginTop:8}}>
                     <button className="btn primary" onClick={startTimer}>Start Timer</button>
                   </div>
