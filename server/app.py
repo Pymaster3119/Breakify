@@ -8,7 +8,7 @@ import torch
 import os
 
 # SQLAlchemy / PostgreSQL
-from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, func, Boolean
+from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey, func, Boolean, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -55,6 +55,11 @@ class User(Base):
     email = Column(String, nullable=True)
     password_hash = Column(String, nullable=False)
     created_at = Column(DateTime, nullable=False)
+
+    # Optional FK to schools table (nullable to allow existing users to remain)
+    school_id = Column(Integer, ForeignKey('schools.id'), nullable=True)
+    school = relationship('School', back_populates='users')
+
     sessions = relationship('WorkSession', back_populates='user', cascade='all, delete-orphan')
     settings = relationship('UserSettings', uselist=False, back_populates='user', cascade='all, delete-orphan')
 
@@ -81,9 +86,41 @@ class UserSettings(Base):
     user = relationship('User', back_populates='settings')
 
 
+class School(Base):
+    __tablename__ = 'schools'
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    users = relationship('User', back_populates='school', cascade='all, delete-orphan')
+
+
 def init_db():
-    # Create tables if they don't exist
+    """Create missing tables and perform safe (non-destructive) migrations.
+    - creates `schools` table if missing
+    - adds `school_id` column to `users` when absent (nullable)
+    """
+    # Create any missing tables declared in models
     Base.metadata.create_all(bind=engine)
+
+    # Use inspector to detect whether 'school_id' column already exists on users
+    try:
+        inspector = inspect(engine)
+        if 'users' in inspector.get_table_names():
+            cols = [c['name'] for c in inspector.get_columns('users')]
+            if 'school_id' not in cols:
+                # add nullable integer column and FK constraint
+                with engine.connect() as conn:
+                    conn.execute(text('ALTER TABLE users ADD COLUMN school_id INTEGER'))
+                    # Add FK constraint (ignore if DB disallows or it already exists)
+                    try:
+                        conn.execute(text('ALTER TABLE users ADD CONSTRAINT users_school_id_fkey FOREIGN KEY (school_id) REFERENCES schools (id)'))
+                    except Exception:
+                        # non-fatal; some DBs may implicitly add FK or constraints may differ
+                        pass
+                    conn.commit()
+    except Exception:
+        # If inspection or ALTER fails, don't crash app start; log to stdout
+        print('Warning: could not perform schema migration for school_id; you may need to ALTER your users table manually.')
 
 
 def get_db():
@@ -99,16 +136,37 @@ def find_user(username):
         u = db.query(User).filter(User.username == username).first()
         if not u:
             return None
-        return {'id': u.id, 'username': u.username, 'email': u.email, 'password_hash': u.password_hash, 'created_at': u.created_at}
+        return {
+            'id': u.id,
+            'username': u.username,
+            'email': u.email,
+            'password_hash': u.password_hash,
+            'created_at': u.created_at,
+            'school_id': int(u.school_id) if getattr(u, 'school_id', None) is not None else None,
+            'school_name': (u.school.name if getattr(u, 'school', None) is not None else None)
+        }
     finally:
         db.close()
 
-def create_user(username, password, email=None):
+def create_user(username, password, email=None, school_id=None, school_name=None):
     db = SessionLocal()
     try:
         pw_hash = generate_password_hash(password)
         now = datetime.utcnow()
-        u = User(username=username, password_hash=pw_hash, email=email, created_at=now)
+
+        # if school_name provided, try to find-or-create the school
+        resolved_school_id = None
+        if school_name:
+            s = db.query(School).filter(func.lower(School.name) == school_name.strip().lower()).first()
+            if not s:
+                s = School(name=school_name.strip(), created_at=now)
+                db.add(s)
+                db.flush()  # populate s.id
+            resolved_school_id = s.id
+        elif school_id:
+            resolved_school_id = int(school_id)
+
+        u = User(username=username, password_hash=pw_hash, email=email, created_at=now, school_id=resolved_school_id)
         db.add(u)
         db.commit()
         return True
@@ -368,6 +426,10 @@ def api_register():
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
     email = (data.get('email') or '').strip()
+    # school information can be provided as school_id or school_name
+    school_id = data.get('school_id')
+    school_name = (data.get('school_name') or '').strip() or None
+
     if not username or not password:
         return jsonify({'error': 'username and password required'}), 400
     if len(username) < 3 or len(password) < 6:
@@ -375,11 +437,13 @@ def api_register():
     if find_user(username):
         return jsonify({'error': 'user exists'}), 400
     try:
-        create_user(username, password, email)
+        create_user(username, password, email, school_id=school_id, school_name=school_name)
         session['user'] = username
         session.modified = True  # Ensure session is marked as modified
         token = issue_jwt(username)
-        resp = make_response(jsonify({'ok': True, 'user': {'name': username}, 'token': token}))
+        # include school info in response
+        created_user = find_user(username)
+        resp = make_response(jsonify({'ok': True, 'user': {'name': username, 'school_id': created_user.get('school_id'), 'school_name': created_user.get('school_name')}, 'token': token}))
         resp.headers['Access-Control-Allow-Credentials'] = 'true'
         resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
         return resp
@@ -467,7 +531,7 @@ def api_login():
     session['user'] = username
     session.modified = True  # Ensure session is marked as modified
     token = issue_jwt(username)
-    resp = make_response(jsonify({'ok': True, 'user': {'name': username}, 'token': token}))
+    resp = make_response(jsonify({'ok': True, 'user': {'name': username, 'school_id': user.get('school_id'), 'school_name': user.get('school_name')}, 'token': token}))
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
     resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
     return resp
@@ -479,7 +543,8 @@ def api_me():
     if not username:
         resp = make_response(jsonify({'user': None}))
     else:
-        resp = make_response(jsonify({'user': {'name': username}}))
+        u = find_user(username)
+        resp = make_response(jsonify({'user': {'name': username, 'school_id': u.get('school_id'), 'school_name': u.get('school_name')}}))
     resp.headers['Access-Control-Allow-Credentials'] = 'true'
     resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
     return resp
@@ -526,6 +591,43 @@ def api_settings():
         resp.headers['Access-Control-Allow-Credentials'] = 'true'
         resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
         return resp
+
+
+@app.route('/api/schools', methods=['GET', 'POST'])
+def api_schools():
+    # GET: list schools, POST: create a new school
+    if request.method == 'GET':
+        db = SessionLocal()
+        try:
+            rows = db.query(School).order_by(School.name.asc()).all()
+            out = [{'id': r.id, 'name': r.name} for r in rows]
+            resp = make_response(jsonify({'ok': True, 'schools': out}))
+            resp.headers['Access-Control-Allow-Credentials'] = 'true'
+            resp.headers['Access-Control-Allow-Origin'] = FRONTEND_ORIGIN
+            return resp
+        finally:
+            db.close()
+
+    # POST
+    data = request.get_json() or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name required'}), 400
+    db = SessionLocal()
+    try:
+        existing = db.query(School).filter(func.lower(School.name) == name.lower()).first()
+        if existing:
+            return jsonify({'ok': True, 'school': {'id': existing.id, 'name': existing.name}})
+        now = datetime.utcnow()
+        s = School(name=name, created_at=now)
+        db.add(s)
+        db.commit()
+        return jsonify({'ok': True, 'school': {'id': s.id, 'name': s.name}})
+    except Exception as e:
+        db.rollback()
+        return jsonify({'error': 'failed to create school', 'detail': str(e)}), 500
+    finally:
+        db.close()
 
 
 @app.route('/api/logout', methods=['POST'])
