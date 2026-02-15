@@ -14,25 +14,40 @@ export default function Leaderboard({ onClose }) {
   const [rows, setRows] = useState(null)
   const [err, setErr] = useState(null)
   const [me, setMe] = useState(null)
+  const [view, setView] = useState('global') // 'global' or 'school'
 
   useEffect(() => {
     let mounted = true
     console.debug('[Leaderboard] Mounted, fetching current user and leaderboard')
-    // fetch current user and leaderboard in parallel
-    Promise.all([
-  fetch('https://breakify-backend.onrender.com/api/me', { credentials: 'include' }).then(r => r.json()).catch(() => ({ user: null })),
-  fetch('https://breakify-backend.onrender.com/api/leaderboard', { credentials: 'include' }).then(r => r.json()).catch(() => ({ ok: false }))
-    ]).then(([meData, lbData]) => {
-      if (!mounted) return
-      console.debug('[Leaderboard] Responses received:', { meData, lbData })
-      const currentUser = meData && meData.user ? meData.user : null
-      setMe(currentUser)
-      console.debug('[Leaderboard] Current user set to:', currentUser)
-      if (lbData && lbData.ok) setRows(lbData.leaderboard)
-      else setErr((lbData && lbData.error) || 'Failed to load leaderboard')
-    }).catch((err) => { if (mounted) { console.error('[Leaderboard] Fetch error:', err); setErr('Network error') } })
+    
+    // First, fetch current user to see if they have a school
+    fetch('https://breakify-backend.onrender.com/api/me', { credentials: 'include' })
+      .then(r => r.json())
+      .then(meData => {
+        if (!mounted) return
+        const currentUser = meData && meData.user ? meData.user : null
+        setMe(currentUser)
+        
+        // Use user's school if available and we are in school view, else global
+        const schoolId = (view === 'school' && currentUser?.school_id) ? currentUser.school_id : ''
+        const lbUrl = `https://breakify-backend.onrender.com/api/leaderboard${schoolId ? `?school_id=${schoolId}` : ''}`
+        
+        return fetch(lbUrl, { credentials: 'include' })
+      })
+      .then(r => r ? r.json() : null)
+      .then(lbData => {
+        if (!mounted || !lbData) return
+        if (lbData.ok) setRows(lbData.leaderboard)
+        else setErr(lbData.error || 'Failed to load leaderboard')
+      })
+      .catch(err => {
+        if (mounted) {
+          console.error('[Leaderboard] Fetch error:', err)
+          setErr('Network error')
+        }
+      })
     return () => { mounted = false }
-  }, [])
+  }, [view])
 
   const handleClose = () => {
     if (onClose) return onClose()
@@ -76,11 +91,34 @@ export default function Leaderboard({ onClose }) {
         <div className="bf-card">
           <div className="bf-title">
             <div>
-              <h1>Top Focused Users</h1>
-              <div className="bf-sub">Ranked by total focused time. Celebrate consistency — small steps build habits.</div>
+              <h1>{view === 'global' ? 'Top Focused Users' : `${me?.school_name || 'School'} Leaderboard`}</h1>
+              <div className="bf-sub">
+                {view === 'global' 
+                  ? 'Ranked by total focused time. Celebrate consistency — small steps build habits.'
+                  : `See how you compare with others at ${me?.school_name || 'your school'}.`
+                }
+              </div>
             </div>
-            <div style={{display:'flex',alignItems:'center',gap:10}}>
-              <div style={{fontSize:12,color:'#9fb2d6',textAlign:'right'}}>Last updated: {new Date().toLocaleString()}</div>
+            <div style={{display:'flex',alignItems:'center',gap:16}}>
+              <div style={{display:'flex',background:'rgba(255,255,255,0.05)',borderRadius:8,padding:4}}>
+                <button 
+                  onClick={() => setView('global')}
+                  style={{
+                    background: view === 'global' ? 'rgba(255,255,255,0.1)' : 'transparent',
+                    border: 'none', color: '#fff', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13
+                  }}
+                >Global</button>
+                {me?.school_id && (
+                  <button 
+                    onClick={() => setView('school')}
+                    style={{
+                      background: view === 'school' ? 'rgba(255,255,255,0.1)' : 'transparent',
+                      border: 'none', color: '#fff', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13
+                    }}
+                  >My School</button>
+                )}
+              </div>
+              <div style={{fontSize:12,color:'#9fb2d6',textAlign:'right'}}>Last updated: {new Date().toLocaleTimeString()}</div>
             </div>
           </div>
 

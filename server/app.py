@@ -495,6 +495,8 @@ def api_stats():
 @app.route('/api/leaderboard')
 def api_leaderboard():
     # Public endpoint: return users ordered by total worked seconds (desc)
+    # Support school_id filtering for school-specific leaderboards
+    school_id = request.args.get('school_id')
     db = SessionLocal()
     try:
         # Rank users by total focused seconds (focused_seconds)
@@ -505,7 +507,16 @@ def api_leaderboard():
                 func.count(WorkSession.id).label('session_count'),
             )
             .outerjoin(WorkSession, User.id == WorkSession.user_id)
-            .group_by(User.id)
+        )
+        
+        if school_id:
+            try:
+                q = q.filter(User.school_id == int(school_id))
+            except (ValueError, TypeError):
+                pass
+
+        q = (
+            q.group_by(User.id)
             .order_by(func.coalesce(func.sum(WorkSession.focused_seconds), 0).desc())
             .limit(100)
         )
