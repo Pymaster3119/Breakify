@@ -535,6 +535,10 @@ export default function App() {
     : Math.max(0, Math.min(100, ((START_SECONDS - (timerSeconds > 0 ? timerSeconds : START_SECONDS)) / START_SECONDS) * 100))
   const progressWidth = `${progressPct.toFixed(2)}%`
 
+  // Camera/detector should only run while an active work timer is running
+  // (camera off during breaks and before the Start Timer button is clicked)
+  const cameraActive = timerStartedRef.current && timerSeconds > 0 && !isOnBreak
+
   return (
     <div className="app">
       <header className="header">
@@ -570,8 +574,8 @@ export default function App() {
         <main className="main">
           <section className="preview">
             <div>
-              <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={!manualMode && !isOnBreak} />
-              <YoloDetector videoRef={videoRef} enabled={!isOnBreak && !manualMode} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} onDistracted={handleDistracted} />
+              <WebcamFeed forwardedRef={videoRef} showVideo={false} autoStart={cameraActive} />
+              <YoloDetector videoRef={videoRef} enabled={cameraActive} onPersonPresent={handlePersonPresent} onPhoneSeen={handlePhoneSeen} onDistracted={handleDistracted} />
             </div>
 
             <div className="timer-overlay">
