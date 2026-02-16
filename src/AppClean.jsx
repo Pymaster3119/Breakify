@@ -399,6 +399,14 @@ export default function App() {
           distractedSecondsRef.current = 0
           usedBreakSecondsRef.current = 0
         }
+        // Always record in all_sessions (regardless of login status)
+        try {
+          fetch('https://breakify-backend.onrender.com/api/all_session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ session_length: START_SECONDS })
+          }).catch(() => {})
+        } catch (e) {}
       } catch (e) {}
 
       // start break timer when work session completes

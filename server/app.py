@@ -95,6 +95,13 @@ class School(Base):
     users = relationship('User', back_populates='school', cascade='all, delete-orphan')
 
 
+class AllSession(Base):
+    __tablename__ = 'all_sessions'
+    id = Column(Integer, primary_key=True, index=True)
+    session_length = Column(Integer, nullable=False)  # total seconds (focused + unfocused)
+    created_at = Column(DateTime, nullable=False)
+
+
 def init_db():
     """Create missing tables and perform safe (non-destructive) migrations.
     - creates `schools` table if missing
@@ -690,6 +697,29 @@ def api_schools():
     except Exception as e:
         db.rollback()
         return jsonify({'error': 'failed to create school', 'detail': str(e)}), 500
+    finally:
+        db.close()
+
+
+@app.route('/api/all_session', methods=['POST'])
+def api_all_session():
+    """Record a finished session for ANY user (authenticated or not)."""
+    data = request.get_json() or {}
+    try:
+        session_length = int(data.get('session_length') or 0)
+    except (ValueError, TypeError):
+        session_length = 0
+    if session_length <= 0:
+        return jsonify({'error': 'invalid session_length'}), 400
+    db = SessionLocal()
+    try:
+        entry = AllSession(session_length=session_length, created_at=datetime.utcnow())
+        db.add(entry)
+        db.commit()
+        return jsonify({'ok': True})
+    except SQLAlchemyError as e:
+        db.rollback()
+        return jsonify({'error': 'failed to record session', 'detail': str(e)}), 500
     finally:
         db.close()
 
