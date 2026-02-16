@@ -87,8 +87,8 @@ export default function Leaderboard({ onClose, user: userProp, authToken }) {
               <h1>{view === 'global' ? 'Top Focused Users' : `${me?.school_name || 'School'} Leaderboard`}</h1>
               <div className="bf-sub">
                 {view === 'global' 
-                  ? 'Ranked by total focused time. Celebrate consistency — small steps build habits.'
-                  : `See how you compare with others at ${me?.school_name || 'your school'}.`
+                  ? 'Ranked by total focused time.'
+                  : `See how you compare with others at your school.`
                 }
               </div>
             </div>
@@ -125,6 +125,7 @@ export default function Leaderboard({ onClose, user: userProp, authToken }) {
                   <th>User</th>
                   <th>Total Focused</th>
                   <th>Sessions</th>
+                  <th>Streak</th>
                 </tr>
               </thead>
               <tbody>
@@ -141,6 +142,7 @@ export default function Leaderboard({ onClose, user: userProp, authToken }) {
                       <td className="bf-username">{r.username}{isMe ? ' • you' : ''}</td>
                       <td>{formatSecs(r.total_seconds)}</td>
                       <td>{r.session_count}</td>
+                      <td>{r.streak > 0 ? `🔥 ${r.streak}d` : '—'}</td>
                     </tr>
                   )
                 })}

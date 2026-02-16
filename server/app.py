@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, send_from_directory, abort, session, 
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
+from collections import defaultdict
 import jwt
 from ultralytics import YOLO
 import torch
@@ -492,6 +493,30 @@ def api_stats():
     return jsonify({'ok': True, 'stats': stats})
 
 
+def compute_streak(session_dates_set):
+    """Compute current consecutive-day streak from a set of date objects.
+    Weekdays (Mon-Fri) are required to maintain the streak.
+    Weekends (Sat-Sun) can improve the streak if a session exists,
+    but missing them does NOT break it."""
+    if not session_dates_set:
+        return 0
+    today = datetime.utcnow().date()
+    streak = 0
+    d = today
+    # Grace: if today has no session yet, start checking from yesterday
+    if d not in session_dates_set:
+        d -= timedelta(days=1)
+    for _ in range(400):
+        if d in session_dates_set:
+            streak += 1
+            d -= timedelta(days=1)
+        elif d.weekday() >= 5:  # Sat/Sun without session – skip, don't break
+            d -= timedelta(days=1)
+        else:  # weekday without session – streak broken
+            break
+    return streak
+
+
 @app.route('/api/leaderboard')
 def api_leaderboard():
     # Public endpoint: return users ordered by total worked seconds (desc)
@@ -521,7 +546,35 @@ def api_leaderboard():
             .limit(100)
         )
         rows = q.all()
-        result = [{'username': r[0], 'total_seconds': int(r[1]), 'session_count': int(r[2])} for r in rows]
+
+        # --- streak computation (uses existing session dates, no schema change) ---
+        usernames = [r[0] for r in rows]
+        uid_rows = db.query(User.id, User.username).filter(User.username.in_(usernames)).all()
+        uid_to_name = {uid: uname for uid, uname in uid_rows}
+
+        cutoff = datetime.utcnow() - timedelta(days=400)
+        date_rows = (
+            db.query(WorkSession.user_id, WorkSession.created_at)
+            .filter(WorkSession.user_id.in_(list(uid_to_name.keys())))
+            .filter(WorkSession.created_at >= cutoff)
+            .all()
+        )
+        user_dates = defaultdict(set)
+        for uid, created_at in date_rows:
+            if uid in uid_to_name and created_at:
+                user_dates[uid_to_name[uid]].add(created_at.date())
+
+        streaks = {uname: compute_streak(user_dates.get(uname, set())) for uname in usernames}
+
+        result = [
+            {
+                'username': r[0],
+                'total_seconds': int(r[1]),
+                'session_count': int(r[2]),
+                'streak': streaks.get(r[0], 0),
+            }
+            for r in rows
+        ]
         return jsonify({'ok': True, 'leaderboard': result})
     finally:
         db.close()
