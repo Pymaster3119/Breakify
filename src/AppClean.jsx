@@ -567,7 +567,7 @@ export default function App() {
                 <button className="btn secondary" onClick={() => window.history.back()}>Back</button>
               </div>
             </div>
-            <Leaderboard onClose={() => window.history.back()} />
+            <Leaderboard onClose={() => window.history.back()} user={user} authToken={authToken} />
           </div>
         </main>
       ) : (

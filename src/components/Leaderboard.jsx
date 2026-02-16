@@ -10,31 +10,24 @@ function formatSecs(secs) {
   return `${sec}s`
 }
 
-export default function Leaderboard({ onClose }) {
+export default function Leaderboard({ onClose, user: userProp, authToken }) {
   const [rows, setRows] = useState(null)
   const [err, setErr] = useState(null)
-  const [me, setMe] = useState(null)
+  const me = userProp || null
   const [view, setView] = useState('global') // 'global' or 'school'
+
+  const getAuthHeaders = () => (authToken ? { Authorization: `Bearer ${authToken}` } : {})
 
   useEffect(() => {
     let mounted = true
-    console.debug('[Leaderboard] Mounted, fetching current user and leaderboard')
+    console.debug('[Leaderboard] Mounted, fetching leaderboard', { user: me?.name, school_id: me?.school_id })
     
-    // First, fetch current user to see if they have a school
-    fetch('https://breakify-backend.onrender.com/api/me', { credentials: 'include' })
+    // Use user's school if available and we are in school view, else global
+    const schoolId = (view === 'school' && me?.school_id) ? me.school_id : ''
+    const lbUrl = `https://breakify-backend.onrender.com/api/leaderboard${schoolId ? `?school_id=${schoolId}` : ''}`
+    
+    fetch(lbUrl, { credentials: 'include', headers: { ...getAuthHeaders() } })
       .then(r => r.json())
-      .then(meData => {
-        if (!mounted) return
-        const currentUser = meData && meData.user ? meData.user : null
-        setMe(currentUser)
-        
-        // Use user's school if available and we are in school view, else global
-        const schoolId = (view === 'school' && currentUser?.school_id) ? currentUser.school_id : ''
-        const lbUrl = `https://breakify-backend.onrender.com/api/leaderboard${schoolId ? `?school_id=${schoolId}` : ''}`
-        
-        return fetch(lbUrl, { credentials: 'include' })
-      })
-      .then(r => r ? r.json() : null)
       .then(lbData => {
         if (!mounted || !lbData) return
         if (lbData.ok) setRows(lbData.leaderboard)
@@ -47,7 +40,7 @@ export default function Leaderboard({ onClose }) {
         }
       })
     return () => { mounted = false }
-  }, [view])
+  }, [view, me])
 
   const handleClose = () => {
     if (onClose) return onClose()
