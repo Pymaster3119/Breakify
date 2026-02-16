@@ -551,7 +551,7 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-left">
-          <div className="logo"><img src="/logo_full.png" alt="Breakify" style={{height: 36}} /></div>
+          <div className="logo" style={{display:'flex',alignItems:'center',gap:8}}><img src="/logo_full.png" alt="Breakify" style={{height: 36, verticalAlign:'middle'}} /> Breakify</div>
           <div className="signed-in">Signed in as: {user?.name || (user?.isGuest ? 'Guest' : 'Not signed in')}</div>
         </div>
 
