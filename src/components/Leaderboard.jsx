@@ -108,10 +108,9 @@ export default function Leaderboard({ onClose, user: userProp, authToken }) {
                       background: view === 'school' ? 'rgba(255,255,255,0.1)' : 'transparent',
                       border: 'none', color: '#fff', padding: '6px 12px', borderRadius: 6, cursor: 'pointer', fontSize: 13
                     }}
-                  >My School</button>
+                  >School</button>
                 )}
               </div>
-              <div style={{fontSize:12,color:'#9fb2d6',textAlign:'right'}}>Last updated: {new Date().toLocaleTimeString()}</div>
             </div>
           </div>
 
